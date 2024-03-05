@@ -1,3 +1,13 @@
+GIT
+  remote: https://github.com/EGPAFMalawiHIS/malawi_hiv_program_reports
+  revision: 0480439c10269c22f99c06b7ff8265279c241481
+  branch: main
+  specs:
+    malawi_hiv_program_reports (1.0.0)
+      activerecord (~> 7.0.8)
+      rails (>= 7.0.6)
+      rspec (~> 3.13)
+
 GEM
   remote: https://rubygems.org/
   specs:
@@ -66,6 +76,9 @@ GEM
       i18n (>= 1.6, < 2)
       minitest (>= 5.1)
       tzinfo (~> 2.0)
+    ast (2.4.2)
+    backport (1.2.0)
+    benchmark (0.3.0)
     bootsnap (1.18.3)
       msgpack (~> 1.2)
     builder (3.2.4)
@@ -75,6 +88,8 @@ GEM
     debug (1.9.1)
       irb (~> 1.10)
       reline (>= 0.3.8)
+    diff-lcs (1.5.1)
+    e2mmap (0.1.0)
     erubi (1.12.0)
     globalid (1.2.1)
       activesupport (>= 6.1)
@@ -84,6 +99,13 @@ GEM
     irb (1.11.2)
       rdoc
       reline (>= 0.4.2)
+    jaro_winkler (1.5.6)
+    json (2.7.1)
+    kramdown (2.4.0)
+      rexml
+    kramdown-parser-gfm (1.1.0)
+      kramdown (~> 2.0)
+    language_server-protocol (3.17.0.3)
     loofah (2.22.0)
       crass (~> 1.0.2)
       nokogiri (>= 1.12.0)
@@ -119,6 +141,10 @@ GEM
       racc (~> 1.4)
     nokogiri (1.16.2-x86_64-linux)
       racc (~> 1.4)
+    parallel (1.24.0)
+    parser (3.3.0.5)
+      ast (~> 2.4.1)
+      racc
     pg (1.5.6)
     psych (5.1.2)
       stringio
@@ -126,6 +152,8 @@ GEM
       nio4r (~> 2.0)
     racc (1.7.3)
     rack (2.2.8.1)
+    rack-cors (2.0.2)
+      rack (>= 2.0.0)
     rack-test (2.1.0)
       rack (>= 1.3)
     rails (7.0.8.1)
@@ -156,19 +184,71 @@ GEM
       rake (>= 12.2)
       thor (~> 1.0)
       zeitwerk (~> 2.5)
+    rainbow (3.1.1)
     rake (13.1.0)
+    rbs (2.8.4)
     rdoc (6.6.2)
       psych (>= 4.0.0)
+    regexp_parser (2.9.0)
     reline (0.4.3)
       io-console (~> 0.5)
+    reverse_markdown (2.1.1)
+      nokogiri
+    rexml (3.2.6)
+    rspec (3.13.0)
+      rspec-core (~> 3.13.0)
+      rspec-expectations (~> 3.13.0)
+      rspec-mocks (~> 3.13.0)
+    rspec-core (3.13.0)
+      rspec-support (~> 3.13.0)
+    rspec-expectations (3.13.0)
+      diff-lcs (>= 1.2.0, < 2.0)
+      rspec-support (~> 3.13.0)
+    rspec-mocks (3.13.0)
+      diff-lcs (>= 1.2.0, < 2.0)
+      rspec-support (~> 3.13.0)
+    rspec-support (3.13.1)
+    rubocop (1.61.0)
+      json (~> 2.3)
+      language_server-protocol (>= 3.17.0)
+      parallel (~> 1.10)
+      parser (>= 3.3.0.2)
+      rainbow (>= 2.2.2, < 4.0)
+      regexp_parser (>= 1.8, < 3.0)
+      rexml (>= 3.2.5, < 4.0)
+      rubocop-ast (>= 1.30.0, < 2.0)
+      ruby-progressbar (~> 1.7)
+      unicode-display_width (>= 2.4.0, < 3.0)
+    rubocop-ast (1.31.1)
+      parser (>= 3.3.0.4)
+    ruby-progressbar (1.13.0)
+    solargraph (0.50.0)
+      backport (~> 1.2)
+      benchmark
+      bundler (~> 2.0)
+      diff-lcs (~> 1.4)
+      e2mmap
+      jaro_winkler (~> 1.5)
+      kramdown (~> 2.3)
+      kramdown-parser-gfm (~> 1.1)
+      parser (~> 3.0)
+      rbs (~> 2.0)
+      reverse_markdown (~> 2.0)
+      rubocop (~> 1.38)
+      thor (~> 1.0)
+      tilt (~> 2.0)
+      yard (~> 0.9, >= 0.9.24)
     stringio (3.1.0)
     thor (1.3.1)
+    tilt (2.3.0)
     timeout (0.4.1)
     tzinfo (2.0.6)
       concurrent-ruby (~> 1.0)
+    unicode-display_width (2.5.0)
     websocket-driver (0.7.6)
       websocket-extensions (>= 0.1.0)
     websocket-extensions (0.1.5)
+    yard (0.9.36)
     zeitwerk (2.6.13)
 
 PLATFORMS
@@ -182,9 +262,13 @@ PLATFORMS
 DEPENDENCIES
   bootsnap
   debug
+  malawi_hiv_program_reports!
   pg (~> 1.1)
   puma (~> 5.0)
+  rack-cors
   rails (~> 7.0.8, >= 7.0.8.1)
+  rubocop
+  solargraph
   tzinfo-data
 
 RUBY VERSION
