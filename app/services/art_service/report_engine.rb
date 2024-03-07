@@ -33,7 +33,7 @@ module ArtService
     end
 
     def report_type(name)
-      type = ReportType.find_by_name(name)
+      type = ReportType.where('LOWER(name) = ?', name.downcase)&.first
       return type if type
 
       return OpenStruct.new(name: name.upcase) if REPORTS[name.upcase]
