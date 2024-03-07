@@ -29,7 +29,6 @@ module ArtService
       report_manager = REPORTS[type.name.upcase].new(
         type:, name:, start_date:, end_date:, **kwargs
       )
-      debugger
       report_manager.send(method)
     end
 
