@@ -29,3 +29,5 @@
 /config/master.key
 
 *.yml
+
+Gemfile.lock
