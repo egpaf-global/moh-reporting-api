@@ -39,8 +39,8 @@ gem 'rack-cors'
 gem 'composite_primary_keys'
 gem 'rest-client'
 
-# gem 'malawi_hiv_program_reports', git: 'https://github.com/EGPAFMalawiHIS/malawi_hiv_program_reports', branch: 'main'
-gem 'malawi_hiv_program_reports', path: '../malawi_hiv_program_reports'
+gem 'malawi_hiv_program_reports', git: 'https://github.com/EGPAFMalawiHIS/malawi_hiv_program_reports', branch: 'main'
+# gem 'malawi_hiv_program_reports', path: '../malawi_hiv_program_reports'
 
 group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
