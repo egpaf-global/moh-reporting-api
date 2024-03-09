@@ -997,7 +997,7 @@ BEGIN
     INTO max_obs_datetime
     FROM orders
     INNER JOIN drug_order ON drug_order.order_id = orders.order_id
-    INNER JOIN arv_drug ON drug_order.drug_inventory_id = arv_drug.drug_i
+    INNER JOIN arv_drug ON drug_order.drug_inventory_id = arv_drug.drug_id
     WHERE orders.patient_id = set_patient_id
     AND orders.voided = 0
     AND drug_order.quantity > 0
@@ -1006,10 +1006,10 @@ BEGIN
     AND drug_order.site_id = my_site_id 
     AND drug_order.site_id = orders.site_id;
 
-    SELECT GROUP_CONCAT(DISTINCT arv_drug.drug_i ORDER BY arv_drug.drug_i ASC)
+    SELECT GROUP_CONCAT(DISTINCT arv_drug.drug_id ORDER BY arv_drug.drug_id ASC)
     INTO @drug_ids
     FROM drug_order
-    INNER JOIN arv_drug ON drug_order.drug_inventory_id = arv_drug.drug_i
+    INNER JOIN arv_drug ON drug_order.drug_inventory_id = arv_drug.drug_id
     INNER JOIN orders ON drug_order.order_id = orders.order_id 
     INNER JOIN encounter ON encounter.encounter_id = orders.encounter_id
     WHERE orders.voided = 0
