@@ -634,35 +634,39 @@ DELIMITER ;
 DROP FUNCTION IF EXISTS died_in;
 
 DELIMITER $$
-CREATE FUNCTION died_in(set_patient_id INT, set_status VARCHAR(25), date_enrolled DATE, my_site_id INT) RETURNS VARCHAR(45)
+CREATE FUNCTION died_in(set_patient_id INT, set_status VARCHAR(25), date_enrolled DATE, my_site_id INT) RETURNS varchar(25)
 DETERMINISTIC
 BEGIN
-    DECLARE set_outcome VARCHAR(25) DEFAULT 'N/A';
-    DECLARE date_of_death DATE;
-    DECLARE num_of_days INT;
+DECLARE set_outcome varchar(25) default 'N/A';
+DECLARE date_of_death DATE;
+DECLARE num_of_days INT;
 
-    IF set_status = 'Patient died' THEN
-        SELECT COALESCE(death_date, outcome_date) INTO date_of_death
-        FROM temp_patient_outcomes
-        INNER JOIN temp_earliest_start_date USING (patient_id, site_id)
-        WHERE cum_outcome = 'Patient died' AND patient_id = set_patient_id AND site_id = my_site_id;
+IF set_status = 'Patient died' THEN
 
-        IF date_of_death IS NULL THEN
-            RETURN 'Unknown';
-        END IF;
+  SET date_of_death = (
+    SELECT COALESCE(death_date, outcome_date)
+    FROM temp_patient_outcomes INNER JOIN temp_earliest_start_date USING (patient_id)
+    WHERE cum_outcome = 'Patient died' AND patient_id = set_patient_id AND site_id = my_site_id
+  );
 
-        SET num_of_days = TIMESTAMPDIFF(day, date(date_enrolled), date(date_of_death));
+  IF date_of_death IS NULL THEN
+    RETURN 'Unknown';
+  END IF;
 
-        CASE 
-            WHEN num_of_days <= 30 THEN SET set_outcome = '1st month';
-            WHEN num_of_days <= 60 THEN SET set_outcome = '2nd month';
-            WHEN num_of_days <= 91 THEN SET set_outcome = '3rd month';
-            WHEN num_of_days > 91 THEN SET set_outcome = '4+ months';
-            ELSE SET set_outcome = 'Unknown';
-        END CASE;
-    END IF;
 
-    RETURN set_outcome;
+  set num_of_days = (TIMESTAMPDIFF(day, date(date_enrolled), date(date_of_death)));
+
+  IF num_of_days <= 30 THEN set set_outcome ="1st month";
+  ELSEIF num_of_days <= 60 THEN set set_outcome ="2nd month";
+  ELSEIF num_of_days <= 91 THEN set set_outcome ="3rd month";
+  ELSEIF num_of_days > 91 THEN set set_outcome ="4+ months";
+  ELSEIF num_of_days IS NULL THEN set set_outcome = "Unknown";
+  END IF;
+
+
+END IF;
+
+RETURN set_outcome;
 END$$
 DELIMITER ;
 
