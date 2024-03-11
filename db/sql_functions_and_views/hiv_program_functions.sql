@@ -10,40 +10,29 @@ DELIMITER $$
 CREATE FUNCTION patient_date_enrolled(my_patient_id INT, my_site_id INT) RETURNS DATE
 DETERMINISTIC
 BEGIN
-    DECLARE my_start_date DATE;
-    DECLARE arv_concept_id INT;
+DECLARE my_start_date DATE;
+DECLARE min_start_date DATETIME;
+DECLARE arv_concept_id INT(11);
 
-    -- Get the concept ID for 'ANTIRETROVIRAL DRUGS'
-    SELECT concept_id INTO arv_concept_id 
-    FROM concept_name 
-    WHERE name = 'ANTIRETROVIRAL DRUGS' 
-    LIMIT 1;
+SET arv_concept_id = (SELECT concept_id FROM concept_name WHERE name ='ANTIRETROVIRAL DRUGS' LIMIT 1);
 
-    -- Get the minimum start date directly
-    SELECT DATE(o.start_date) INTO my_start_date 
-    FROM drug_order d 
-    INNER JOIN orders o ON d.order_id = o.order_id 
-    WHERE o.voided = 0 
-    AND d.site_id = o.site_id 
-    AND o.site_id = my_site_id 
-    AND o.patient_id = my_patient_id 
-    AND d.quantity > 0 
-    AND drug_inventory_id IN (
-        SELECT drug_id 
-        FROM drug 
-        WHERE concept_id IN (
-            SELECT concept_id 
-            FROM concept_set 
-            WHERE concept_set = arv_concept_id
-        )
-    ) 
-    ORDER BY o.start_date 
-    LIMIT 1;
+SET my_start_date = (SELECT DATE(o.start_date) FROM drug_order d 
+INNER JOIN orders o ON d.order_id = o.order_id 
+AND o.voided = 0 AND o.site_id = my_site_id AND d.site_id = my_site_id
+WHERE o.patient_id = my_patient_id AND drug_inventory_id IN(SELECT drug_id FROM drug 
+WHERE concept_id IN(SELECT concept_id FROM concept_set WHERE concept_set = arv_concept_id)) 
+AND d.quantity > 0 AND o.start_date = (SELECT min(start_date) FROM drug_order d 
+INNER JOIN orders o ON d.order_id = o.order_id AND o.voided = 0 
+AND d.site_id = my_site_id AND o.site_id = my_site_id
+WHERE d.quantity > 0 AND o.patient_id = my_patient_id 
+AND drug_inventory_id IN(SELECT drug_id FROM drug 
+WHERE concept_id IN(SELECT concept_id FROM concept_set 
+WHERE concept_set = arv_concept_id))) LIMIT 1);
 
-    RETURN my_start_date;
+
+RETURN my_start_date;
 END$$
 DELIMITER ;
-
 
 
 
@@ -52,34 +41,24 @@ DELIMITER ;
 DROP FUNCTION IF EXISTS patient_start_date;
 
 DELIMITER $$
-CREATE FUNCTION patient_start_date(set_patient_id INT, my_site_id INT) RETURNS DATE
+CREATE FUNCTION patient_start_date(my_patient_id INT, my_site_id INT) RETURNS DATE
 DETERMINISTIC
 BEGIN
-
-DECLARE start_date DATE;
-
--- Get the concept IDs for 'AMOUNT DISPENSED' and 'ANTIRETROVIRAL DRUGS' only once
+DECLARE start_date VARCHAR(10);
 DECLARE dispension_concept_id INT;
 DECLARE arv_concept INT;
 
-SELECT concept_id INTO dispension_concept_id FROM concept_name WHERE name = 'AMOUNT DISPENSED' LIMIT 1;
-SELECT concept_id INTO arv_concept FROM concept_name WHERE name = 'ANTIRETROVIRAL DRUGS' LIMIT 1;
+set dispension_concept_id = (SELECT concept_id FROM concept_name WHERE name = 'AMOUNT DISPENSED');
+set arv_concept = (SELECT concept_id FROM concept_name WHERE name = "ANTIRETROVIRAL DRUGS");
 
--- Use a single query to get the start date directly
-SELECT MIN(DATE(obs.obs_datetime)) INTO start_date
-FROM obs
-JOIN drug d ON obs.value_drug = d.drug_id
-JOIN concept_set cs ON d.concept_id = cs.concept_id
-WHERE obs.voided = 0
-AND obs.person_id = set_patient_id 
-AND obs.concept_id = dispension_concept_id 
-AND obs.site_id = my_site_id 
-AND cs.concept_set = arv_concept;
+set start_date = (SELECT MIN(DATE(obs_datetime)) FROM obs WHERE voided = 0 
+AND person_id = my_patient_id AND concept_id = dispension_concept_id 
+AND site_id = my_site_id AND value_drug IN (SELECT drug_id FROM drug d 
+WHERE d.concept_id IN (SELECT cs.concept_id FROM concept_set cs WHERE cs.concept_set = arv_concept)));
 
 RETURN start_date;
 END$$
 DELIMITER ;
-
 
 
 
@@ -91,51 +70,29 @@ DELIMITER $$
 CREATE FUNCTION date_antiretrovirals_started(set_patient_id INT, min_state_date DATE, my_site_id INT) RETURNS DATE
 DETERMINISTIC
 BEGIN
-
 DECLARE date_started DATE;
+DECLARE estimated_art_date DATE;
 DECLARE estimated_art_date_months  VARCHAR(45);
 
--- Get the initial date_started if available
-SELECT LEFT(value_datetime, 10) INTO date_started
-FROM obs 
-WHERE concept_id = 2516 
-AND encounter_id > 0 
-AND person_id = set_patient_id 
-AND site_id = my_site_id 
-AND voided = 0 
-LIMIT 1;
 
-IF date_started IS NULL THEN
-    -- Get the estimated ART start date months
-    SELECT value_text INTO estimated_art_date_months
-    FROM obs 
-    WHERE encounter_id > 0 
-    AND concept_id = 2516 
-    AND person_id = set_patient_id 
-    AND site_id =  my_site_id 
-    AND voided = 0 
-    LIMIT 1;
+SET date_started = (SELECT LEFT(value_datetime,10) FROM obs WHERE concept_id = 2516 
+AND encounter_id > 0 AND person_id = set_patient_id AND voided = 0 AND site_id = my_site_id LIMIT 1);
 
-    -- Get the min_state_date if available
-    SELECT obs_datetime INTO min_state_date
-    FROM obs 
-    WHERE encounter_id > 0 
-    AND concept_id = 2516 
-    AND person_id = set_patient_id 
-    AND site_id = my_site_id 
-    AND voided = 0 
-    LIMIT 1;
+IF date_started IS NULL then
+  SET estimated_art_date_months = (SELECT value_text FROM obs WHERE encounter_id > 0 
+  AND concept_id = 2516 AND person_id = set_patient_id AND voided = 0 AND site_id = my_site_id LIMIT 1);
+  SET min_state_date = (SELECT obs_datetime FROM obs WHERE encounter_id > 0 AND concept_id = 2516 
+  AND person_id = set_patient_id AND voided = 0 AND site_id = my_site_id LIMIT 1);
 
-    -- Calculate date_started based on estimated ART start date months
-    CASE estimated_art_date_months
-        WHEN '6 months' THEN SET date_started = DATE_SUB(min_state_date, INTERVAL 6 MONTH);
-        WHEN '12 months' THEN SET date_started = DATE_SUB(min_state_date, INTERVAL 12 MONTH);
-        WHEN '18 months' THEN SET date_started = DATE_SUB(min_state_date, INTERVAL 18 MONTH);
-        WHEN '24 months' THEN SET date_started = DATE_SUB(min_state_date, INTERVAL 24 MONTH);
-        WHEN '48 months' THEN SET date_started = DATE_SUB(min_state_date, INTERVAL 48 MONTH);
-        WHEN 'Over 2 years' THEN SET date_started = DATE_SUB(min_state_date, INTERVAL 60 MONTH);
-        ELSE SET date_started = patient_start_date(set_patient_id, my_site_id);
-    END CASE;
+  IF estimated_art_date_months = "6 months" THEN set date_started = (SELECT DATE_SUB(min_state_date, INTERVAL 6 MONTH));
+  ELSEIF estimated_art_date_months = "12 months" THEN set date_started = (SELECT DATE_SUB(min_state_date, INTERVAL 12 MONTH));
+  ELSEIF estimated_art_date_months = "18 months" THEN set date_started = (SELECT DATE_SUB(min_state_date, INTERVAL 18 MONTH));
+  ELSEIF estimated_art_date_months = "24 months" THEN set date_started = (SELECT DATE_SUB(min_state_date, INTERVAL 24 MONTH));
+  ELSEIF estimated_art_date_months = "48 months" THEN set date_started = (SELECT DATE_SUB(min_state_date, INTERVAL 48 MONTH));
+  ELSEIF estimated_art_date_months = "Over 2 years" THEN set date_started = (SELECT DATE_SUB(min_state_date, INTERVAL 60 MONTH));
+  ELSE
+    SET date_started = patient_start_date(set_patient_id, my_site_id);
+  END IF;
 END IF;
 
 RETURN date_started;
@@ -579,52 +536,32 @@ DROP FUNCTION IF EXISTS date_antiretrovirals_started;
 DELIMITER $$
 CREATE FUNCTION date_antiretrovirals_started(set_patient_id INT, min_state_date DATE, my_site_id INT) RETURNS DATE
 DETERMINISTIC
-BEGIN
-    DECLARE date_started DATE;
-    DECLARE estimated_art_date_months VARCHAR(45);
+DECLARE date_started DATE;
+DECLARE estimated_art_date DATE;
+DECLARE estimated_art_date_months  VARCHAR(45);
 
-    -- Get the initial start date from observations
-    SET date_started = (SELECT LEFT(value_datetime, 10) 
-                        FROM obs 
-                        WHERE concept_id = 2516 
-                            AND encounter_id > 0 
-                            AND person_id = set_patient_id 
-                            AND voided = 0 
-														AND site_id = my_site_id
-                        LIMIT 1);
 
-    -- If initial start date is null, calculate based on estimated ART duration
-    IF date_started IS NULL THEN
-        SET estimated_art_date_months = (SELECT value_text 
-                                         FROM obs 
-                                         WHERE encounter_id > 0 
-                                             AND concept_id = 2516 
-                                             AND person_id = set_patient_id 
-                                             AND voided = 0 
-																						 AND site_id = my_site_id
-                                         LIMIT 1);
-        SET min_state_date = (SELECT obs_datetime 
-                              FROM obs 
-                              WHERE encounter_id > 0 
-                                  AND concept_id = 2516 
-                                  AND person_id = set_patient_id 
-                                  AND voided = 0 
-																	AND site_id = my_site_id
-                              LIMIT 1);
+SET date_started = (SELECT LEFT(value_datetime,10) FROM obs WHERE concept_id = 2516 AND encounter_id > 0 
+AND person_id = set_patient_id AND voided = 0 AND site_id = my_site_id LIMIT 1);
 
-        -- Calculate start date based on estimated ART duration
-        CASE estimated_art_date_months
-            WHEN "6 months" THEN SET date_started = DATE_SUB(min_state_date, INTERVAL 6 MONTH);
-            WHEN "12 months" THEN SET date_started = DATE_SUB(min_state_date, INTERVAL 12 MONTH);
-            WHEN "18 months" THEN SET date_started = DATE_SUB(min_state_date, INTERVAL 18 MONTH);
-            WHEN "24 months" THEN SET date_started = DATE_SUB(min_state_date, INTERVAL 24 MONTH);
-            WHEN "48 months" THEN SET date_started = DATE_SUB(min_state_date, INTERVAL 48 MONTH);
-            WHEN "Over 2 years" THEN SET date_started = DATE_SUB(min_state_date, INTERVAL 60 MONTH);
-            ELSE SET date_started = patient_start_date(set_patient_id);
-        END CASE;
-    END IF;
+IF date_started IS NULL then
+  SET estimated_art_date_months = (SELECT value_text FROM obs WHERE encounter_id > 0 AND concept_id = 2516 
+  AND person_id = set_patient_id AND voided = 0 AND site_id = my_site_id LIMIT 1);
+  SET min_state_date = (SELECT obs_datetime FROM obs WHERE encounter_id > 0 AND concept_id = 2516 
+  AND person_id = set_patient_id AND voided = 0 AND site_id = my_site_id LIMIT 1);
 
-    RETURN date_started;
+  IF estimated_art_date_months = "6 months" THEN set date_started = (SELECT DATE_SUB(min_state_date, INTERVAL 6 MONTH));
+  ELSEIF estimated_art_date_months = "12 months" THEN set date_started = (SELECT DATE_SUB(min_state_date, INTERVAL 12 MONTH));
+  ELSEIF estimated_art_date_months = "18 months" THEN set date_started = (SELECT DATE_SUB(min_state_date, INTERVAL 18 MONTH));
+  ELSEIF estimated_art_date_months = "24 months" THEN set date_started = (SELECT DATE_SUB(min_state_date, INTERVAL 24 MONTH));
+  ELSEIF estimated_art_date_months = "48 months" THEN set date_started = (SELECT DATE_SUB(min_state_date, INTERVAL 48 MONTH));
+  ELSEIF estimated_art_date_months = "Over 2 years" THEN set date_started = (SELECT DATE_SUB(min_state_date, INTERVAL 60 MONTH));
+  ELSE
+    SET date_started = patient_start_date(set_patient_id, my_site_id);
+  END IF;
+END IF;
+
+RETURN date_started;
 END$$
 DELIMITER ;
 
@@ -699,35 +636,82 @@ END$$
 DELIMITER ;
 
 
--- Drug pill count
+-- Drug pill count >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 DROP FUNCTION IF EXISTS drug_pill_count;
 
 DELIMITER $$
-CREATE FUNCTION drug_pill_count(set_patient_id INT, set_drug_id INT, set_obs_datetime DATETIME, my_site_id INT) RETURNS INT
+CREATE FUNCTION drug_pill_count(my_patient_id INT, my_drug_id INT, my_date DATE, my_site_id INT) RETURNS INT
 DETERMINISTIC
 BEGIN
-    DECLARE my_pill_count INT DEFAULT 0;
 
-    SELECT
-        COALESCE(SUM(CASE
-                WHEN ob.value_text IS NOT NULL THEN CAST(ob.value_text AS DECIMAL)
-                ELSE 0
-            END) + SUM(COALESCE(ob.value_numeric, 0)), 0)
-    INTO
-        my_pill_count
-    FROM
-        obs ob
-        INNER JOIN drug_order do ON ob.order_id = do.order_id AND ob.site_id = my_site_id
-        INNER JOIN orders o ON do.order_id = o.order_id AND o.site_id = my_site_id
-    WHERE
-        ob.person_id = set_patient_id
-        AND ob.concept_id = 2540
-        AND ob.voided = 0
-        AND o.voided = 0
-        AND do.drug_inventory_id = set_drug_id
-        AND DATE(ob.obs_datetime) = DATE(set_obs_datetime);
+DECLARE done INT DEFAULT FALSE;
+  DECLARE my_pill_count, my_total_text, my_total_numeric DECIMAL;
 
-    RETURN my_pill_count;
+  DECLARE cur1 CURSOR FOR SELECT SUM(ob.value_numeric), SUM(CAST(ob.value_text AS DECIMAL)) FROM obs ob
+                        INNER JOIN drug_order do ON ob.order_id = do.order_id
+                        AND do.site_id = my_site_id AND ob.site_id = my_site_id
+                        INNER JOIN orders o ON do.order_id = o.order_id
+                    WHERE ob.person_id = my_patient_id
+                        AND ob.concept_id = 2540
+                        AND ob.voided = 0
+                        AND o.voided = 0
+                        AND do.drug_inventory_id = my_drug_id
+                        AND DATE(ob.obs_datetime) = my_date
+                    GROUP BY ob.person_id;
+
+  DECLARE cur2 CURSOR FOR SELECT SUM(ob.value_numeric) FROM obs ob
+                    WHERE ob.person_id = my_patient_id
+                        AND ob.concept_id = (SELECT concept_id FROM drug WHERE drug_id = my_drug_id)
+                        AND ob.voided = 0
+                        AND DATE(ob.obs_datetime) = my_date
+                        AND ob.site_id = my_site_id
+                    GROUP BY ob.person_id;
+
+  DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+
+  OPEN cur1;
+
+  SET my_pill_count = 0;
+
+  read_loop: LOOP
+    FETCH cur1 INTO my_total_numeric, my_total_text;
+
+    IF done THEN
+      CLOSE cur1;
+      LEAVE read_loop;
+    END IF;
+
+        IF my_total_numeric IS NULL THEN
+            SET my_total_numeric = 0;
+        END IF;
+
+        IF my_total_text IS NULL THEN
+            SET my_total_text = 0;
+        END IF;
+
+        SET my_pill_count = my_total_numeric + my_total_text;
+    END LOOP;
+
+  OPEN cur2;
+  SET done = false;
+
+  read_loop: LOOP
+    FETCH cur2 INTO my_total_numeric;
+
+    IF done THEN
+      CLOSE cur2;
+      LEAVE read_loop;
+    END IF;
+
+        IF my_total_numeric IS NULL THEN
+            SET my_total_numeric = 0;
+        END IF;
+
+        SET my_pill_count = my_total_numeric + my_pill_count;
+    END LOOP;
+
+  RETURN my_pill_count;
+
 END$$
 DELIMITER ;
 
@@ -737,150 +721,110 @@ DROP FUNCTION IF EXISTS female_maternal_status;
 DELIMITER $$
 CREATE FUNCTION female_maternal_status(my_patient_id INT, end_datetime DATETIME, my_site_id INT) RETURNS VARCHAR(20)
 DETERMINISTIC
-BEGIN
-    DECLARE maternal_status VARCHAR(20);
+DECLARE breastfeeding_date DATETIME;
+DECLARE pregnant_date DATETIME;
+DECLARE maternal_status VARCHAR(20);
+DECLARE obs_value_coded INT(11);
 
-    SET maternal_status = (
-        SELECT
-            CASE
-                WHEN pregnant_date IS NULL AND breastfeeding_date IS NULL THEN 'FNP'
-                WHEN pregnant_date IS NOT NULL AND breastfeeding_date IS NOT NULL THEN 'Unknown'
-                WHEN pregnant_date IS NULL AND breastfeeding_date IS NOT NULL THEN 'Check BF'
-                WHEN pregnant_date IS NOT NULL AND breastfeeding_date IS NULL THEN 'Check FP'
-            END
-        FROM (
-            SELECT
-                (
-                    SELECT MAX(COALESCE(obs_datetime, '0000-00-00'))
-                    FROM obs
-                    WHERE concept_id IN (
-                            SELECT GROUP_CONCAT(concept_id)
-                            FROM concept_name
-                            WHERE name IN ('Is patient pregnant?', 'Patient pregnant')
-                        )
-                        AND voided = 0
-                        AND person_id = my_patient_id
-                        AND obs_datetime <= end_datetime
-												AND site_id = my_site_id
-                ) AS pregnant_date,
-                (
-                    SELECT MAX(COALESCE(obs_datetime, '0000-00-00'))
-                    FROM obs
-                    WHERE concept_id = (
-                            SELECT concept_id
-                            FROM concept_name
-                            WHERE name = 'Breastfeeding'
-                        )
-                        AND voided = 0
-                        AND person_id = my_patient_id
-                        AND obs_datetime <= end_datetime
-												AND site_id = my_site_id
-                ) AS breastfeeding_date
-        ) AS dates
-    );
 
-    IF maternal_status = 'Unknown' THEN
-        IF breastfeeding_date <= pregnant_date THEN
-            SET maternal_status = (
-                SELECT
-                    CASE
-                        WHEN value_coded = 1065 THEN 'FP'
-                        ELSE 'FNP'
-                    END
-                FROM obs
-                WHERE concept_id IN (
-                        SELECT GROUP_CONCAT(concept_id)
-                        FROM concept_name
-                        WHERE name IN ('Is patient pregnant?', 'Patient pregnant')
-                    )
-                    AND voided = 0
-                    AND person_id = my_patient_id
-                    AND obs_datetime = pregnant_date
-										AND site_id = my_site_id
-                LIMIT 1
-            );
-        ELSE
-            SET maternal_status = (
-                SELECT
-                    CASE
-                        WHEN value_coded = 1065 THEN 'FBf'
-                        ELSE 'FNP'
-                    END
-                FROM obs
-                WHERE concept_id = (
-                        SELECT concept_id
-                        FROM concept_name
-                        WHERE name = 'Breastfeeding'
-                    )
-                    AND voided = 0
-                    AND person_id = my_patient_id
-                    AND obs_datetime = breastfeeding_date
-										AND site_id = my_site_id
-                LIMIT 1
-            );
-        END IF;
+SET @reason_for_starting = (SELECT concept_id FROM concept_name WHERE name = 'Reason for ART eligibility' LIMIT 1);
 
-        IF DATE(breastfeeding_date) = DATE(pregnant_date) AND maternal_status = 'FNP' THEN
-            SET maternal_status = (
-                SELECT
-                    CASE
-                        WHEN value_coded = 1065 THEN 'FBf'
-                        ELSE 'FNP'
-                    END
-                FROM obs
-                WHERE concept_id = (
-                        SELECT concept_id
-                        FROM concept_name
-                        WHERE name = 'Breastfeeding'
-                    )
-                    AND voided = 0
-                    AND person_id = my_patient_id
-                    AND obs_datetime = breastfeeding_date
-										AND site_id = my_site_id
-                LIMIT 1
-            );
-        END IF;
+SET @pregnant_concepts := (SELECT GROUP_CONCAT(concept_id) FROM concept_name WHERE name IN('Is patient pregnant?','Patient pregnant'));
+SET @breastfeeding_concept := (SELECT GROUP_CONCAT(concept_id) FROM concept_name WHERE name = 'Breastfeeding');
+
+SET pregnant_date = (SELECT MAX(obs_datetime) FROM obs WHERE concept_id IN(@pregnant_concepts) 
+AND voided = 0 AND person_id = my_patient_id AND obs_datetime <= end_datetime AND site_id = my_site_id);
+SET breastfeeding_date = (SELECT MAX(obs_datetime) FROM obs WHERE concept_id IN(@breastfeeding_concept) 
+AND voided = 0 AND person_id = my_patient_id AND obs_datetime <= end_datetime AND site_id = my_site_id);
+
+IF pregnant_date IS NULL THEN
+  SET pregnant_date = (SELECT MAX(obs_datetime) FROM obs WHERE concept_id = @reason_for_starting 
+  AND voided = 0 AND person_id = my_patient_id AND obs_datetime <= end_datetime 
+  AND site_id = my_site_id AND value_coded IN(1755));
+END IF;
+
+IF breastfeeding_date IS NULL THEN
+  SET breastfeeding_date = (SELECT MAX(obs_datetime) FROM obs WHERE concept_id = @reason_for_starting 
+  AND voided = 0 AND person_id = my_patient_id AND obs_datetime <= end_datetime 
+  AND site_id = my_site_id AND value_coded IN(834,5632));
+END IF;
+
+IF pregnant_date IS NULL AND breastfeeding_date IS NULL THEN SET maternal_status = "FNP";
+ELSEIF pregnant_date IS NOT NULL AND breastfeeding_date IS NOT NULL THEN SET maternal_status = "Unknown";
+ELSEIF pregnant_date IS NULL AND breastfeeding_date IS NOT NULL THEN SET maternal_status = "Check BF";
+ELSEIF pregnant_date IS NOT NULL AND breastfeeding_date IS NULL THEN SET maternal_status = "Check FP";
+END IF;
+
+IF maternal_status = 'Unknown' THEN
+
+  IF breastfeeding_date <= pregnant_date THEN
+    SET obs_value_coded = (SELECT value_coded FROM obs WHERE concept_id IN(@pregnant_concepts) AND voided = 0 
+    AND person_id = my_patient_id AND site_id = my_site_id AND obs_datetime = pregnant_date LIMIT 1);
+    IF obs_value_coded = 1065 THEN SET maternal_status = 'FP';
+    ELSEIF obs_value_coded = 1066 THEN SET maternal_status = 'FNP';
     END IF;
+  END IF;
 
-    IF maternal_status IN ('Check FP', 'Check BF') THEN
-        SET maternal_status = (
-            SELECT
-                CASE
-                    WHEN value_coded = 1065 THEN 'FP'
-                    ELSE 'FNP'
-                END
-            FROM obs
-            WHERE concept_id IN (
-                    SELECT GROUP_CONCAT(concept_id)
-                    FROM concept_name
-                    WHERE name IN ('Is patient pregnant?', 'Patient pregnant')
-                )
-                AND voided = 0
-                AND person_id = my_patient_id
-                AND obs_datetime = pregnant_date
-								AND site_id = my_site_id
-            LIMIT 1
-        );
-
-        IF maternal_status = 'FNP' THEN
-            SET maternal_status = (
-                SELECT
-                    CASE
-                        WHEN value_coded IN (1755, 834, 5632) THEN 'FBf'
-                        ELSE 'FNP'
-                    END
-                FROM obs
-                WHERE concept_id IN (7563)
-                    AND voided = 0
-                    AND person_id = my_patient_id
-                    AND obs_datetime = pregnant_date
-										AND site_id = my_site_id
-                LIMIT 1
-            );
-        END IF;
+  IF breastfeeding_date > pregnant_date THEN
+    SET obs_value_coded = (SELECT value_coded FROM obs WHERE concept_id IN(@breastfeeding_concept) 
+    AND site_id = my_site_id AND voided = 0 AND person_id = my_patient_id AND obs_datetime = breastfeeding_date LIMIT 1);
+    IF obs_value_coded = 1065 THEN SET maternal_status = 'FBf';
+    ELSEIF obs_value_coded = 1066 THEN SET maternal_status = 'FNP';
     END IF;
+  END IF;
 
-    RETURN maternal_status;
+  IF DATE(breastfeeding_date) = DATE(pregnant_date) AND maternal_status = 'FNP' THEN
+    SET obs_value_coded = (SELECT value_coded FROM obs WHERE concept_id IN(@breastfeeding_concept) 
+    AND voided = 0 AND person_id = my_patient_id 
+    AND site_id = my_site_id AND obs_datetime = breastfeeding_date LIMIT 1);
+    IF obs_value_coded = 1065 THEN SET maternal_status = 'FBf';
+    ELSEIF obs_value_coded = 1066 THEN SET maternal_status = 'FNP';
+    END IF;
+  END IF;
+END IF;
+
+
+IF maternal_status = 'Check FP' THEN
+
+  SET obs_value_coded = (SELECT value_coded FROM obs WHERE concept_id IN(@pregnant_concepts) 
+  AND voided = 0 AND person_id = my_patient_id AND site_id = my_site_id AND obs_datetime = pregnant_date LIMIT 1);
+  IF obs_value_coded = 1065 THEN SET maternal_status = 'FP';
+  ELSEIF obs_value_coded = 1066 THEN SET maternal_status = 'FNP';
+  END IF;
+
+  IF obs_value_coded IS NULL THEN
+    SET obs_value_coded = (SELECT GROUP_CONCAT(value_coded) FROM obs WHERE concept_id IN(7563) 
+    AND voided = 0 AND person_id = my_patient_id AND site_id = my_site_id AND obs_datetime = pregnant_date);
+    IF obs_value_coded IN(1755) THEN SET maternal_status = 'FP';
+    END IF;
+  END IF;
+
+  IF maternal_status = 'Check FP' THEN SET maternal_status = 'FNP';
+  END IF;
+END IF;
+
+IF maternal_status = 'Check BF' THEN
+
+  SET obs_value_coded = (SELECT value_coded FROM obs WHERE concept_id IN(@breastfeeding_concept) 
+  AND voided = 0 AND person_id = my_patient_id AND site_id = my_site_id AND obs_datetime = breastfeeding_date LIMIT 1);
+  IF obs_value_coded = 1065 THEN SET maternal_status = 'FBf';
+  ELSEIF obs_value_coded = 1066 THEN SET maternal_status = 'FNP';
+  END IF;
+
+  IF obs_value_coded IS NULL THEN
+    SET obs_value_coded = (SELECT GROUP_CONCAT(value_coded) FROM obs WHERE concept_id IN(7563) 
+    AND voided = 0 AND person_id = my_patient_id AND site_id = my_site_id AND obs_datetime = breastfeeding_date);
+    IF obs_value_coded IN(834,5632) THEN SET maternal_status = 'FBf';
+    END IF;
+  END IF;
+
+  IF maternal_status = 'Check BF' THEN SET maternal_status = 'FNP';
+  END IF;
+END IF;
+
+
+
+RETURN maternal_status;
 END$$
 DELIMITER ;
 
@@ -889,111 +833,91 @@ DELIMITER ;
 DROP FUNCTION IF EXISTS patient_current_regimen;
 
 DELIMITER $$
-CREATE FUNCTION patient_current_regimen(set_patient_id INT, my_end_date DATE, my_site_id INT) RETURNS VARCHAR(255)
+CREATE FUNCTION patient_current_regimen(my_patient_id INT, my_date DATE, my_site_id INT) RETURNS VARCHAR(255)
 DETERMINISTIC
-BEGIN
-    DECLARE max_obs_datetime DATETIME;
-    DECLARE regimen VARCHAR(255) DEFAULT 'N/A';
+DECLARE max_obs_datetime DATETIME;
+DECLARE regimen VARCHAR(10) DEFAULT 'N/A';
 
-    SELECT MAX(orders.start_date)
-    INTO max_obs_datetime
+  SET max_obs_datetime = (
+    SELECT MAX(start_date)
     FROM orders
-    INNER JOIN drug_order ON drug_order.order_id = orders.order_id
-    INNER JOIN arv_drug ON drug_order.drug_inventory_id = arv_drug.drug_id
-    WHERE orders.patient_id = set_patient_id
-    AND orders.voided = 0
-    AND drug_order.quantity > 0
-    AND DATE(orders.start_date) <= my_end_date
-    AND orders.site_id = my_site_id 
-    AND drug_order.site_id = my_site_id 
-    AND drug_order.site_id = orders.site_id;
+      INNER JOIN drug_order
+        ON drug_order.order_id = orders.order_id
+        AND drug_order.drug_inventory_id IN (SELECT * FROM arv_drug)
+        AND orders.voided = 0
+        AND DATE(orders.start_date) <= DATE(my_date)
+        AND orders.site_id = my_site_id
+        AND drug_order.site_id = my_site_id
+    WHERE orders.patient_id = my_patient_id AND drug_order.quantity > 0
+  );
 
-    SELECT GROUP_CONCAT(DISTINCT arv_drug.drug_id ORDER BY arv_drug.drug_id ASC)
-    INTO @drug_ids
+  SET @drug_ids := (
+    SELECT GROUP_CONCAT(DISTINCT(drug_order.drug_inventory_id) ORDER BY drug_order.drug_inventory_id ASC)
     FROM drug_order
-    INNER JOIN arv_drug ON drug_order.drug_inventory_id = arv_drug.drug_id
-    INNER JOIN orders ON drug_order.order_id = orders.order_id 
-    INNER JOIN encounter ON encounter.encounter_id = orders.encounter_id
-    WHERE orders.voided = 0
-    AND DATE(orders.start_date) = DATE(max_obs_datetime)
-    AND drug_order.quantity > 0
-    AND orders.site_id = my_site_id 
-    AND encounter.patient_id = set_patient_id
-    AND encounter.voided = 0
-    AND encounter.encounter_type = 25
-    AND encounter.site_id = my_site_id;
+      INNER JOIN arv_drug ON drug_order.drug_inventory_id = arv_drug.drug_id
+      INNER JOIN orders ON drug_order.order_id = orders.order_id AND drug_order.quantity > 0
+      AND orders.site_id = my_site_id AND drug_order.site_id = my_site_id AND orders.voided = 0
+      INNER JOIN encounter
+        ON encounter.encounter_id = orders.encounter_id
+        AND encounter.voided = 0
+        AND encounter.encounter_type = 25
+    WHERE date(orders.start_date) = DATE(max_obs_datetime)
+      AND encounter.patient_id = my_patient_id
+    ORDER BY arv_drug.drug_id ASC
+  );
 
-    SELECT DISTINCT regimen_name.name INTO regimen
-    FROM moh_regimen_combination AS combo
-    INNER JOIN moh_regimen_combination_drug AS drug ON combo.regimen_combination_id = drug.regimen_combination_id
-    INNER JOIN moh_regimen_name AS regimen_name ON combo.regimen_name_id = regimen_name.regimen_name_id
-    WHERE FIND_IN_SET(drug.drug_id, @drug_ids)
-    LIMIT 1;
+  SET regimen = (
+    SELECT DISTINCT name FROM (
+      SELECT GROUP_CONCAT(drug.drug_id ORDER BY drug.drug_id ASC) AS drugs,
+             regimen_name.name AS name
+      FROM moh_regimen_combination AS combo
+        INNER JOIN moh_regimen_combination_drug AS drug USING (regimen_combination_id)
+        INNER JOIN moh_regimen_name AS regimen_name USING (regimen_name_id)
+      GROUP BY combo.regimen_combination_id
+    ) AS regimens
+    WHERE drugs = @drug_ids
+    LIMIT 1
+  );
 
-    RETURN COALESCE(regimen, 'N/A');
+  IF regimen IS NULL THEN
+    SET regimen = 'N/A';
+  END IF;
+
+  RETURN regimen;
 END$$
 DELIMITER ;
 
-
--- Patient date enrolled
-DROP FUNCTION IF EXISTS patient_date_enrolled;
-
-DELIMITER $$
-CREATE FUNCTION patient_date_enrolled(set_patient_id INT, my_site_id INT) RETURNS DATE
-DETERMINISTIC
-BEGIN
-    DECLARE my_start_date DATE;
-    DECLARE arv_concept_id INT;
-
-    SELECT MIN(DATE(orders.start_date))
-    INTO my_start_date
-    FROM orders
-    INNER JOIN drug_order ON drug_order.order_id = orders.order_id
-    INNER JOIN drug ON drug.drug_id = drug_order.drug_inventory_id
-    WHERE orders.patient_id = set_patient_id
-    AND orders.voided = 0
-    AND drug.concept_id IN (SELECT concept_id FROM concept_set WHERE concept_set IN (SELECT concept_id FROM concept_name WHERE name = 'ANTIRETROVIRAL DRUGS'))
-    AND drug_order.quantity > 0
-    AND orders.site_id = my_site_id 
-    AND drug_order.site_id = my_site_id;
-
-    RETURN my_start_date;
-END$$
-DELIMITER ;
 
 -- Patient given IPT
 DROP FUNCTION IF EXISTS patient_given_ipt;
 
 DELIMITER $$
-CREATE FUNCTION patient_given_ipt(set_patient_id INT, my_end_date DATE, my_site_id INT) RETURNS INT(11)
+CREATE FUNCTION patient_given_ipt(my_patient_id INT, my_start_date DATE, my_end_date DATE, my_site_id INT) RETURNS INT(11)
 DETERMINISTIC
 BEGIN
-    DECLARE given INT DEFAULT FALSE;
+DECLARE given INT DEFAULT FALSE;
+DECLARE record_value INT;
 
-    SELECT COUNT(*) INTO given
-    FROM drug_order d
-    INNER JOIN orders o ON o.order_id = d.order_id
-    WHERE d.drug_inventory_id IN (
-            SELECT drug_id
-            FROM drug
-            WHERE concept_id IN (
-                    SELECT concept_id
-                    FROM concept_name
-                    WHERE name IN ('Isoniazid')
-                )
-        )
-        AND d.quantity > 0
-        AND o.start_date = (
-            SELECT MAX(start_date)
-            FROM orders t
-            WHERE t.patient_id = o.patient_id
-                AND t.start_date BETWEEN my_start_date AND my_end_date
-                AND t.patient_id = set_patient_id
-        )
-        AND o.site_id = my_site_id
-        AND d.site_id = my_site_id;
+  SET record_value = (SELECT o.patient_id FROM drug_order d
+      INNER JOIN orders o ON o.order_id = d.order_id
+      AND o.site_id = my_site_id AND d.site_id = my_site_id
+      WHERE d.drug_inventory_id IN(
+        SELECT GROUP_CONCAT(DISTINCT(drug_id)
+        ORDER BY drug_id ASC) FROM drug WHERE
+        concept_id IN(SELECT concept_id FROM concept_name WHERE name IN('Isoniazid'))
+      ) AND d.quantity > 0
+      AND o.start_date = (SELECT MAX(start_date) FROM orders t WHERE t.patient_id = o.patient_id
+      AND t.start_date BETWEEN DATE_FORMAT(DATE(my_start_date), '%Y-%m-%d 00:00:00')
+      AND DATE_FORMAT(DATE(my_end_date), '%Y-%m-%d 23:59:59')
+      AND t.patient_id = my_patient_id AND t.site_id = my_site_id
+      ) GROUP BY o.patient_id);
 
-    RETURN given;
+  IF record_value IS NOT NULL THEN
+    SET given = TRUE;
+  END IF;
+
+
+	RETURN given;
 END$$
 DELIMITER ;
 
@@ -1004,56 +928,48 @@ DELIMITER $$
 CREATE FUNCTION patient_has_side_effects(my_patient_id INT, my_end_date DATE, my_site_id INT) RETURNS VARCHAR(7)
 DETERMINISTIC
 BEGIN
-    DECLARE mw_side_effects_concept_id INT;
-    DECLARE yes_concept_id INT;
-    DECLARE no_concept_id INT;
-    DECLARE side_effect VARCHAR(7);
+DECLARE mw_side_effects_concept_id INT;
+DECLARE yes_concept_id INT;
+DECLARE no_concept_id INT;
+DECLARE side_effect INT;
+DECLARE latest_obs_date DATE;
 
-    SET mw_side_effects_concept_id = (
-        SELECT concept_id
-        FROM concept_name
-        WHERE name = 'Malawi ART Side Effects' AND voided = 0
-        LIMIT 1
-    );
+  SET mw_side_effects_concept_id = (SELECT concept_id FROM concept_name
+    WHERE name IN('Malawi ART Side Effects') AND voided = 0 LIMIT 1);
 
-    SET yes_concept_id = (
-        SELECT concept_id
-        FROM concept_name
-        WHERE name = 'YES'
-        LIMIT 1
-    );
+  SET yes_concept_id = (SELECT concept_id FROM concept_name WHERE name = 'YES' LIMIT 1);
+  SET no_concept_id = (SELECT concept_id FROM concept_name WHERE name = 'NO' LIMIT 1);
 
-    SET no_concept_id = (
-        SELECT concept_id
-        FROM concept_name
-        WHERE name = 'NO'
-        LIMIT 1
-    );
+  SET latest_obs_date = (SELECT DATE(MAX(t.obs_datetime)) FROM obs t
+        WHERE t.site_id = my_site_id AND t.obs_datetime <= DATE_FORMAT(DATE(my_end_date), '%Y-%m-%d 23:59:59')
+        AND t.concept_id = mw_side_effects_concept_id AND t.voided = 0
+        AND t.person_id = my_patient_id);
 
-    SET side_effect = (
-        SELECT IFNULL(
-            (SELECT 'Yes' 
-            FROM obs 
-            INNER JOIN temp_earliest_start_date e ON e.patient_id = obs.person_id 
-                AND obs.site_id = e.site_id AND obs.site_id = my_site_id
-            WHERE obs_group_id IN (
-                    SELECT obs_id 
-                    FROM obs 
-                    WHERE concept_id = mw_side_effects_concept_id 
-                        AND person_id = my_patient_id 
-                        AND obs.obs_datetime BETWEEN DATE_FORMAT(DATE(MAX(obs_datetime)), '%Y-%m-%d 00:00:00') 
-                            AND DATE_FORMAT(DATE(MAX(obs_datetime)), '%Y-%m-%d 23:59:59') 
-                        AND DATE(obs_datetime) != DATE(e.date_enrolled)
-                ) 
-                AND concept_id = mw_side_effects_concept_id
-                AND value_coded = yes_concept_id
-            GROUP BY concept_id 
-            LIMIT 1), 
-            'No'
-        )
-    );
+  IF latest_obs_date IS NULL THEN
+    return 'Unknown';
+  END IF;
 
-    RETURN side_effect;
+
+
+  SET side_effect = (SELECT value_coded FROM obs
+      INNER JOIN temp_earliest_start_date e ON e.patient_id = obs.person_id
+      AND obs.site_id = my_site_id AND e.site_id = my_site_id
+      WHERE obs_group_id IN (
+      SELECT obs_id FROM obs
+      WHERE site_id = my_site_id 
+        AND concept_id = mw_side_effects_concept_id
+        AND person_id = my_patient_id
+        AND obs.obs_datetime BETWEEN DATE_FORMAT(DATE(latest_obs_date), '%Y-%m-%d 00:00:00')
+        AND DATE_FORMAT(DATE(latest_obs_date), '%Y-%m-%d 23:59:59')
+        AND DATE(obs_datetime) != DATE(e.date_enrolled)
+      )GROUP BY concept_id HAVING value_coded = yes_concept_id LIMIT 1);
+
+  IF side_effect IS NOT NULL THEN
+    return 'Yes';
+  END IF;
+
+
+	RETURN 'No';
 END$$
 DELIMITER ;
 
@@ -1061,88 +977,109 @@ DELIMITER ;
 DROP FUNCTION IF EXISTS patient_outcome;
 
 DELIMITER $$
-CREATE FUNCTION patient_outcome(set_patient_id INT, my_end_date DATE, my_site_id INT) RETURNS VARCHAR(45)
+CREATE FUNCTION patient_outcome(patient_id INT, visit_date date, my_site_id INT) RETURNS VARCHAR(45)
 DETERMINISTIC
 BEGIN
-    DECLARE set_program_id INT;
-    DECLARE set_outcome VARCHAR(45);
-    DECLARE set_timestamp DATETIME;
+DECLARE set_program_id INT;
+DECLARE set_patient_state INT;
+DECLARE set_outcome varchar(25);
+DECLARE set_date_started date;
+DECLARE set_patient_state_died INT;
+DECLARE set_died_concept_id INT;
+DECLARE set_timestamp DATETIME;
+DECLARE dispensed_quantity INT;
 
-    -- Set the timestamp to the end of the specified date
-    SET set_timestamp = CONCAT(DATE(my_end_date), ' 23:59:59');
+SET set_timestamp = TIMESTAMP(CONCAT(DATE(visit_date), ' ', '23:59:59'));
+SET set_program_id = (SELECT program_id FROM program WHERE name ="HIV PROGRAM" LIMIT 1);
 
-    -- Get the program ID for the HIV program
-    SET set_program_id = (SELECT program_id FROM program WHERE name = "HIV PROGRAM" LIMIT 1);
+SET set_patient_state = (SELECT state FROM `patient_state` INNER JOIN patient_program p 
+ON p.patient_program_id = patient_state.patient_program_id 
+AND p.program_id = set_program_id AND p.site_id = my_site_id AND patient_state.site_id = my_site_id
+WHERE (patient_state.voided = 0 AND p.voided = 0 AND p.program_id = program_id 
+AND DATE(start_date) <= visit_date AND p.patient_id = patient_id) 
+AND (patient_state.voided = 0) ORDER BY start_date DESC, patient_state.patient_state_id DESC, patient_state.date_created DESC LIMIT 1);
 
-    -- Initialize the outcome variable
+IF set_patient_state = 1 THEN
+  SET set_patient_state = current_defaulter(patient_id, set_timestamp, my_site_id);
+
+  IF set_patient_state = 1 THEN
+    SET set_outcome = 'Defaulted';
+  ELSE
+    SET set_outcome = 'Pre-ART (Continue)';
+  END IF;
+END IF;
+
+IF set_patient_state = 2   THEN
+  SET set_outcome = 'Patient transferred out';
+END IF;
+
+IF set_patient_state = 3 OR set_patient_state = 127 THEN
+  SET set_outcome = 'Patient died';
+END IF;
+
+
+IF set_patient_state != 3 AND set_patient_state != 127 THEN
+  SET set_patient_state_died = (SELECT state FROM `patient_state` INNER JOIN patient_program p 
+  ON p.patient_program_id = patient_state.patient_program_id AND p.program_id = set_program_id 
+  AND p.site_id = my_site_id AND patient_state.site_id = my_site_id
+  WHERE (patient_state.voided = 0 AND p.voided = 0 AND p.program_id = program_id AND DATE(start_date) <= visit_date 
+  AND p.patient_id = patient_id) AND (patient_state.voided = 0) AND state = 3 
+  ORDER BY patient_state.patient_state_id DESC, patient_state.date_created DESC, start_date DESC LIMIT 1);
+
+  SET set_died_concept_id = (SELECT concept_id FROM concept_name WHERE name = 'Patient died' LIMIT 1);
+
+  IF set_patient_state_died IN(SELECT program_workflow_state_id FROM program_workflow_state WHERE concept_id = set_died_concept_id AND retired = 0) THEN
+    SET set_outcome = 'Patient died';
+    SET set_patient_state = 3;
+  END IF;
+END IF;
+
+
+
+IF set_patient_state = 6 THEN
+  SET set_outcome = 'Treatment stopped';
+END IF;
+
+IF set_patient_state = 7 OR set_outcome = 'Pre-ART (Continue)' OR set_outcome IS NULL THEN
+  SET set_patient_state = current_defaulter(patient_id, set_timestamp, my_site_id);
+
+  IF set_patient_state = 1 THEN
+    SET set_outcome = 'Defaulted';
+  END IF;
+
+  IF set_patient_state = 0 OR set_outcome IS NULL THEN
+
+    SET dispensed_quantity = (SELECT d.quantity
+      FROM orders o
+      INNER JOIN drug_order d ON d.order_id = o.order_id
+      AND d.site_id = my_site_id AND o.site_id = my_site_id
+      INNER JOIN drug ON drug.drug_id = d.drug_inventory_id
+      WHERE o.patient_id = patient_id AND o.voided = 0
+      AND d.drug_inventory_id IN(
+        SELECT DISTINCT(drug_id) FROM drug WHERE
+        concept_id IN(SELECT concept_id FROM concept_set WHERE concept_set = 1085)
+    ) AND DATE(o.start_date) <= visit_date AND d.quantity > 0 ORDER BY start_date DESC LIMIT 1);
+
+    IF dispensed_quantity > 0 THEN
+      SET set_outcome = 'On antiretrovirals';
+    END IF;
+  END IF;
+END IF;
+
+IF set_outcome IS NULL THEN
+  SET set_patient_state = current_defaulter(patient_id, set_timestamp, my_site_id);
+
+  IF set_patient_state = 1 THEN
+    SET set_outcome = 'Defaulted';
+  END IF;
+
+  IF set_outcome IS NULL THEN
     SET set_outcome = 'Unknown';
+  END IF;
 
-    -- Retrieve the patient state and outcome
-    SELECT 
-        COALESCE(
-            CASE
-                WHEN ps.state = 1 THEN
-                    CASE
-                        WHEN current_defaulter(set_patient_id, set_timestamp, my_site_id) = 1 THEN 'Defaulted'
-                        ELSE 'Pre-ART (Continue)'
-                    END
-                WHEN ps.state = 2 THEN 'Patient transferred out'
-                WHEN ps.state = 3 OR ps.state = 127 THEN 'Patient died'
-                WHEN ps.state != 3 AND ps.state != 127 THEN
-                    CASE
-                        WHEN EXISTS (
-                            SELECT 1
-                            FROM patient_state ps2
-                            INNER JOIN patient_program pp ON pp.patient_program_id = ps2.patient_program_id 
-                                AND pp.program_id = set_program_id AND pp.site_id = my_site_id
-                            WHERE ps2.state = 3 AND ps2.voided = 0 AND pp.voided = 0 
-                                AND DATE(ps2.start_date) <= my_end_date 
-                                AND pp.patient_id = set_patient_id
-                        ) THEN 'Patient died'
-                    END
-                WHEN ps.state = 6 THEN 'Treatment stopped'
-                ELSE
-                    CASE
-                        WHEN current_defaulter(set_patient_id, set_timestamp, my_site_id) = 1 THEN 'Defaulted'
-                        WHEN dq.dispensed_quantity > 0 THEN 'On antiretrovirals'
-                        ELSE 'Unknown'
-                    END
-            END,
-            'Unknown'
-        ) INTO set_outcome
-    FROM patient_state ps
-    INNER JOIN patient_program pp ON pp.patient_program_id = ps.patient_program_id 
-        AND pp.program_id = set_program_id AND pp.site_id = my_site_id
-    LEFT JOIN (
-        SELECT 
-            MAX(d.quantity) AS dispensed_quantity,
-            o.patient_id
-        FROM orders o
-        INNER JOIN drug_order d ON d.order_id = o.order_id
-            AND o.site_id = my_site_id AND d.site_id = my_site_id
-            AND d.drug_inventory_id IN (
-                SELECT DISTINCT drug_id 
-                FROM drug 
-                WHERE concept_id IN (
-                    SELECT concept_id 
-                    FROM concept_set 
-                    WHERE concept_set = 1085
-                )
-            ) 
-        WHERE o.voided = 0
-            AND DATE(o.start_date) <= my_end_date 
-            AND d.quantity > 0 
-        GROUP BY o.patient_id
-    ) AS dq ON dq.patient_id = set_patient_id
-    WHERE ps.voided = 0 
-        AND pp.voided = 0 
-        AND DATE(ps.start_date) <= my_end_date 
-        AND pp.patient_id = set_patient_id
-    ORDER BY ps.start_date DESC
-    LIMIT 1; -- Limit to one row
+END IF;
 
-    -- Return the outcome
-    RETURN set_outcome;
+RETURN set_outcome;
 END$$
 DELIMITER ;
 
@@ -1152,47 +1089,23 @@ DELIMITER ;
 DROP FUNCTION IF EXISTS patient_reason_for_starting_art;
 
 DELIMITER $$
-CREATE FUNCTION patient_reason_for_starting_art(set_patient_id INT, my_site_id INT) RETURNS INT(11)
+CREATE FUNCTION patient_reason_for_starting_art(my_patient_id INT, my_site_id INT) RETURNS INT(11)
 DETERMINISTIC
 BEGIN
-    DECLARE reason_concept_id INT;
-    DECLARE coded_concept_id INT;
+    
+  DECLARE reason_for_art_eligibility INT DEFAULT 0;
+  DECLARE reason_concept_id INT;
+  DECLARE coded_concept_id INT;
+  DECLARE max_obs_datetime DATETIME;
 
-    SELECT 
-        COALESCE(
-            (
-                SELECT value_coded 
-                FROM obs 
-                WHERE person_id = set_patient_id 
-                    AND concept_id = (
-                        SELECT concept_id 
-                        FROM concept_name 
-                        WHERE name = 'Reason for ART eligibility' 
-                            AND voided = 0 
-                            LIMIT 1
-                    ) 
-                    AND voided = 0 
-                    AND site_id = my_site_id
-                    AND obs_datetime = (
-                        SELECT MAX(obs_datetime) 
-                        FROM obs 
-                        WHERE person_id = set_patient_id 
-                            AND concept_id = (
-                                SELECT concept_id 
-                                FROM concept_name 
-                                WHERE name = 'Reason for ART eligibility' 
-                                    AND voided = 0 
-                                    LIMIT 1
-                            ) 
-                            AND voided = 0 
-                            AND site_id = my_site_id
-                    )
-                LIMIT 1
-            ),
-            0
-        ) INTO coded_concept_id;
+  SET reason_concept_id = (SELECT concept_id FROM concept_name WHERE name = 'Reason for ART eligibility' AND voided = 0 LIMIT 1);
+  SET max_obs_datetime = (SELECT MAX(obs_datetime) FROM obs WHERE person_id = my_patient_id AND concept_id = reason_concept_id AND voided = 0 AND site_id = my_site_id);
+  SET coded_concept_id = (SELECT value_coded FROM obs WHERE person_id = my_patient_id AND concept_id = reason_concept_id AND voided = 0 AND obs_datetime = max_obs_datetime AND site_id = my_site_id LIMIT 1);
+  SET reason_for_art_eligibility = (coded_concept_id);
 
-    RETURN coded_concept_id;
+
+  RETURN reason_for_art_eligibility;
+
 END$$
 DELIMITER ;
 
@@ -1201,61 +1114,20 @@ DELIMITER ;
 DROP FUNCTION IF EXISTS patient_reason_for_starting_art_text;
 
 DELIMITER $$
-CREATE FUNCTION patient_reason_for_starting_art_text(set_patient_id INT, my_site_id INT) RETURNS VARCHAR(255)
+CREATE FUNCTION patient_reason_for_starting_art_text(my_patient_id INT, my_site_id INT) RETURNS VARCHAR(255)
 DETERMINISTIC
 BEGIN
-    DECLARE reason_concept_id INT;
-    DECLARE coded_concept_id INT;
-    DECLARE reason_text VARCHAR(255);
+  DECLARE reason_for_art_eligibility VARCHAR(255);
+  DECLARE reason_concept_id INT;
+  DECLARE coded_concept_id INT;
+  DECLARE max_obs_datetime DATETIME;
 
-    SELECT 
-        COALESCE(
-            (
-                SELECT value_coded 
-                FROM obs 
-                WHERE person_id = set_patient_id 
-                    AND concept_id = (
-                        SELECT concept_id 
-                        FROM concept_name 
-                        WHERE name = 'Reason for ART eligibility' 
-                            AND voided = 0 
-                            LIMIT 1
-                    ) 
-                    AND voided = 0 
-                    AND site_id = my_site_id
-                    AND obs_datetime = (
-                        SELECT MAX(obs_datetime) 
-                        FROM obs 
-                        WHERE person_id = set_patient_id 
-                            AND concept_id = (
-                                SELECT concept_id 
-                                FROM concept_name 
-                                WHERE name = 'Reason for ART eligibility' 
-                                    AND voided = 0 
-                                    LIMIT 1
-                            ) 
-                            AND voided = 0 
-                            AND site_id = my_site_id
-                    )
-                LIMIT 1
-            ),
-            0
-        ) INTO coded_concept_id;
+  SET reason_concept_id = (SELECT concept_id FROM concept_name WHERE name = 'Reason for ART eligibility' AND voided = 0 LIMIT 1);
+  SET max_obs_datetime = (SELECT MAX(obs_datetime) FROM obs WHERE person_id = my_patient_id AND concept_id = reason_concept_id AND voided = 0 AND site_id = my_site_id);
+  SET coded_concept_id = (SELECT value_coded FROM obs WHERE person_id = my_patient_id AND concept_id = reason_concept_id AND voided = 0 AND obs_datetime = max_obs_datetime AND site_id = my_site_id LIMIT 1);
+  SET reason_for_art_eligibility = (SELECT name FROM concept_name WHERE concept_id = coded_concept_id AND LENGTH(name) > 0 LIMIT 1);
 
-    SELECT 
-        COALESCE(
-            (
-                SELECT name 
-                FROM concept_name 
-                WHERE concept_id = coded_concept_id 
-                    AND name != '' 
-                    AND name IS NOT NULL 
-                    LIMIT 1
-            ),
-            'Unknown'
-        ) INTO reason_text;
-
-    RETURN reason_text;
+  RETURN reason_for_art_eligibility;
 END$$
 DELIMITER ;
 
@@ -1266,49 +1138,33 @@ DELIMITER $$
 CREATE FUNCTION patient_screened_for_tb(my_patient_id INT, my_start_date DATE, my_end_date DATE, my_site_id INT) RETURNS int(11)
 BEGIN
     DECLARE screened INT DEFAULT FALSE;
-    DECLARE record_value INT;
+	DECLARE record_value INT;
 
-    SELECT 
-        COALESCE(
-            (
-                SELECT ob.person_id 
-                FROM obs ob
-                INNER JOIN temp_earliest_start_date e
-                ON e.patient_id = ob.person_id
-                AND e.site_id = my_site_id 
-                AND ob.site_id = my_site_id
-                WHERE ob.concept_id IN (
-                    SELECT GROUP_CONCAT(DISTINCT(concept_id) ORDER BY concept_id ASC) 
-                    FROM concept_name
-                    WHERE name IN ('TB treatment','TB status') 
-                    AND voided = 0
-                ) 
-                AND ob.voided = 0
-                AND ob.obs_datetime = (
-                    SELECT MAX(t.obs_datetime) 
-                    FROM obs t 
-                    WHERE t.obs_datetime BETWEEN DATE_FORMAT(DATE(my_start_date), '%Y-%m-%d 00:00:00') 
-                    AND DATE_FORMAT(DATE(my_end_date), '%Y-%m-%d 23:59:59') 
-                    AND t.person_id = ob.person_id 
-                    AND ob.site_id = my_site_id 
-                    AND t.concept_id IN (
-                        SELECT GROUP_CONCAT(DISTINCT(concept_id) ORDER BY concept_id ASC) 
-                        FROM concept_name 
-                        WHERE name IN ('TB treatment','TB status') 
-                        AND voided = 0
-                    )
-                ) 
-                AND ob.person_id = my_patient_id 
-                GROUP BY ob.person_id
-            ),
-            0
-        ) INTO record_value;
+  SET record_value = (SELECT ob.person_id FROM obs ob
+    INNER JOIN temp_earliest_start_date e
+    ON e.patient_id = ob.person_id
+    AND e.site_id = my_site_id AND ob.site_id = my_site_id
+    WHERE ob.concept_id IN(
+      SELECT GROUP_CONCAT(DISTINCT(concept_id)
+      ORDER BY concept_id ASC) FROM concept_name
+      WHERE name IN('TB treatment','TB status') AND voided = 0
+    ) AND ob.voided = 0
+    AND ob.obs_datetime = (
+    SELECT MAX(t.obs_datetime) FROM obs t WHERE
+    t.obs_datetime BETWEEN DATE_FORMAT(DATE(my_start_date), '%Y-%m-%d 00:00:00')
+    AND DATE_FORMAT(DATE(my_end_date), '%Y-%m-%d 23:59:59')
+    AND t.site_id = my_site_id AND t.person_id = ob.person_id AND t.concept_id IN(
+      SELECT GROUP_CONCAT(DISTINCT(concept_id)
+      ORDER BY concept_id ASC) FROM concept_name
+      WHERE name IN('TB treatment','TB status') AND voided = 0))
+    AND ob.person_id = my_patient_id
+    GROUP BY ob.person_id);
 
-    IF record_value IS NOT NULL THEN
-        SET screened = TRUE;
-    END IF;
+  IF record_value IS NOT NULL THEN
+    SET screened = TRUE;
+  END IF;
 
-    RETURN screened;
+	RETURN screened;
 END$$
 
 DELIMITER ;
@@ -1318,47 +1174,22 @@ DELIMITER ;
 DROP FUNCTION IF EXISTS patient_start_date;
 
 DELIMITER $$
-CREATE FUNCTION patient_start_date(set_patient_id INT, my_site_id INT) RETURNS DATE
+CREATE FUNCTION patient_start_date(patient_id INT, my_site_id INT) RETURNS DATE
 DETERMINISTIC
 BEGIN
-    DECLARE start_date DATE;
+DECLARE start_date VARCHAR(10);
+DECLARE dispension_concept_id INT;
+DECLARE arv_concept INT;
 
-    SELECT 
-        MIN(DATE(obs_datetime)) 
-    INTO 
-        start_date
-    FROM 
-        obs 
-    WHERE 
-        voided = 0 
-        AND person_id = set_patient_id 
-        AND concept_id = (
-            SELECT 
-                concept_id 
-            FROM 
-                concept_name 
-            WHERE 
-                name = 'AMOUNT DISPENSED'
-        ) 
-        AND site_id = my_site_id 
-        AND value_drug IN (
-            SELECT 
-                drug_id 
-            FROM 
-                drug d 
-                INNER JOIN concept_set cs ON d.concept_id = cs.concept_id 
-            WHERE 
-                cs.concept_set = (
-                    SELECT 
-                        concept_id 
-                    FROM 
-                        concept_name 
-                    WHERE 
-                        name = 'ANTIRETROVIRAL DRUGS'
-                )
-        );
+set dispension_concept_id = (SELECT concept_id FROM concept_name WHERE name = 'AMOUNT DISPENSED');
+set arv_concept = (SELECT concept_id FROM concept_name WHERE name = "ANTIRETROVIRAL DRUGS");
 
-    RETURN start_date;
+set start_date = (SELECT MIN(DATE(obs_datetime)) FROM obs WHERE voided = 0 
+AND person_id = patient_id AND concept_id = dispension_concept_id 
+AND site_id = my_site_id AND value_drug IN (SELECT drug_id FROM drug d 
+WHERE d.concept_id IN (SELECT cs.concept_id FROM concept_set cs WHERE cs.concept_set = arv_concept)));
+
+RETURN start_date;
 END$$
 
 DELIMITER ;
@@ -1371,48 +1202,25 @@ DELIMITER $$
 CREATE FUNCTION patient_tb_status(my_patient_id INT, my_end_date DATE, my_site_id INT) RETURNS INT(11)
 DETERMINISTIC
 BEGIN
+    DECLARE screened INT DEFAULT FALSE;
     DECLARE tb_status INT;
+    DECLARE tb_status_concept_id INT;
 
-    SELECT 
-        COALESCE(
-            (
-                SELECT 
-                    ob.value_coded 
-                FROM 
-                    obs ob
-                    INNER JOIN concept_name cn ON ob.value_coded = cn.concept_id AND ob.site_id = my_site_id
-                WHERE 
-                    ob.concept_id = (
-                        SELECT 
-                            concept_id 
-                        FROM 
-                            concept_name 
-                        WHERE 
-                            name = 'TB status' AND voided = 0
-                        LIMIT 1
-                    ) 
-                    AND ob.voided = 0 
-                    AND ob.obs_datetime = (
-                        SELECT 
-                            MAX(t.obs_datetime) 
-                        FROM 
-                            obs t 
-                        WHERE 
-                            t.obs_datetime <= DATE_FORMAT(DATE(my_end_date), '%Y-%m-%d 23:59:59') 
-                            AND t.voided = 0 
-                            AND t.person_id = ob.person_id 
-                            AND t.concept_id = ob.concept_id
-                    )
-                    AND ob.person_id = my_patient_id 
-                    AND ob.site_id = my_site_id
-                GROUP BY 
-                    ob.person_id
-                LIMIT 1
-            ),
-            0
-        ) INTO tb_status;
+    SET tb_status_concept_id = (SELECT concept_id FROM concept_name
+    WHERE name IN('TB status') AND voided = 0 LIMIT 1);
 
-    RETURN tb_status;
+    SET tb_status = (SELECT ob.value_coded FROM obs ob
+    INNER JOIN concept_name cn
+    ON ob.value_coded = cn.concept_id AND ob.site_id = my_site_id 
+    WHERE ob.concept_id = tb_status_concept_id AND ob.voided = 0
+    AND ob.obs_datetime = (
+    SELECT MAX(t.obs_datetime) FROM obs t WHERE
+    t.obs_datetime <= DATE_FORMAT(DATE(my_end_date), '%Y-%m-%d 23:59:59')
+    AND t.voided = 0 AND t.person_id = ob.person_id AND t.concept_id = tb_status_concept_id AND t.site_id = my_site_id)
+    AND ob.person_id = my_patient_id
+    GROUP BY ob.person_id);
+
+	RETURN tb_status;
 END$$
 
 DELIMITER ;
@@ -1424,54 +1232,17 @@ DELIMITER $$
 CREATE FUNCTION patient_who_stage(my_patient_id INT, my_site_id INT) RETURNS VARCHAR(50)
 DETERMINISTIC
 BEGIN
-    DECLARE who_stage VARCHAR(50);
+  DECLARE who_stage VARCHAR(255);
+  DECLARE reason_concept_id INT;
+  DECLARE coded_concept_id INT;
+  DECLARE max_obs_datetime DATETIME;
 
-    SELECT 
-        COALESCE(
-            (
-                SELECT 
-                    cn.name 
-                FROM 
-                    obs o
-                    INNER JOIN concept_name cn ON o.value_coded = cn.concept_id
-                WHERE 
-                    o.person_id = my_patient_id 
-                    AND o.concept_id = (
-                        SELECT 
-                            concept_id 
-                        FROM 
-                            concept_name 
-                        WHERE 
-                            name = 'WHO stage' AND voided = 0 
-                        LIMIT 1
-                    ) 
-                    AND o.voided = 0 
-                    AND o.site_id = my_site_id
-                    AND o.obs_datetime = (
-                        SELECT 
-                            MAX(t.obs_datetime) 
-                        FROM 
-                            obs t 
-                        WHERE 
-                            t.person_id = my_patient_id 
-                            AND t.concept_id = (
-                                SELECT 
-                                    concept_id 
-                                FROM 
-                                    concept_name 
-                                WHERE 
-                                    name = 'WHO stage' AND voided = 0 
-                                LIMIT 1
-                            ) 
-                            AND t.voided = 0 
-                            AND t.site_id = my_site_id
-                    )
-                LIMIT 1
-            ),
-            'Unknown'
-        ) INTO who_stage;
+  SET reason_concept_id = (SELECT concept_id FROM concept_name WHERE name = 'WHO stage' AND voided = 0 LIMIT 1);
+  SET max_obs_datetime = (SELECT MAX(obs_datetime) FROM obs WHERE person_id = my_patient_id AND site_id = my_site_id AND concept_id = reason_concept_id AND voided = 0);
+  SET coded_concept_id = (SELECT value_coded FROM obs WHERE person_id = my_patient_id AND site_id = my_site_id AND concept_id = reason_concept_id AND voided = 0 AND obs_datetime = max_obs_datetime  LIMIT 1);
+  SET who_stage = (SELECT name FROM concept_name WHERE concept_id = coded_concept_id AND LENGTH(name) > 0 LIMIT 1);
 
-    RETURN who_stage;
+  RETURN who_stage;
 END$$
 
 DELIMITER ;
@@ -1481,88 +1252,108 @@ DELIMITER ;
 DROP FUNCTION IF EXISTS pepfar_patient_outcome;
 
 DELIMITER $$
-CREATE FUNCTION pepfar_patient_outcome(set_patient_id INT, my_end_date DATE, my_site_id INT) RETURNS VARCHAR(45)
+CREATE FUNCTION pepfar_patient_outcome(patient_id INT, visit_date DATE, my_site_id INT) RETURNS VARCHAR(45)
 DETERMINISTIC
 BEGIN
-    DECLARE set_program_id INT;
-    DECLARE set_outcome VARCHAR(45);
-    DECLARE set_timestamp DATETIME;
+DECLARE set_program_id INT;
+DECLARE set_patient_state INT;
+DECLARE set_outcome varchar(25);
+DECLARE set_date_started date;
+DECLARE set_patient_state_died INT;
+DECLARE set_died_concept_id INT;
+DECLARE set_timestamp DATETIME;
+DECLARE dispensed_quantity INT;
 
-    -- Set the timestamp to the end of the specified date
-    SET set_timestamp = CONCAT(DATE(my_end_date), ' 23:59:59');
+SET set_timestamp = TIMESTAMP(CONCAT(DATE(visit_date), ' ', '23:59:59'));
+SET set_program_id = (SELECT program_id FROM program WHERE name ="HIV PROGRAM" LIMIT 1);
 
-    -- Get the program ID for the HIV program
-    SET set_program_id = (SELECT program_id FROM program WHERE name = "HIV PROGRAM" LIMIT 1);
+SET set_patient_state = (SELECT state FROM `patient_state` INNER JOIN patient_program p 
+ON p.patient_program_id = patient_state.patient_program_id AND p.program_id = set_program_id 
+AND p.site_id = my_site_id AND patient_state.site_id = my_site_id
+WHERE (patient_state.voided = 0 AND p.voided = 0 AND p.program_id = program_id 
+AND DATE(start_date) <= visit_date AND p.patient_id = patient_id) 
+AND (patient_state.voided = 0) ORDER BY start_date DESC, patient_state.patient_state_id DESC, patient_state.date_created DESC LIMIT 1);
 
-    -- Initialize the outcome variable
+IF set_patient_state = 1 THEN
+  SET set_patient_state = current_pepfar_defaulter(patient_id, set_timestamp, my_site_id);
+
+  IF set_patient_state = 1 THEN
+    SET set_outcome = 'Defaulted';
+  ELSE
+    SET set_outcome = 'Pre-ART (Continue)';
+  END IF;
+END IF;
+
+IF set_patient_state = 2   THEN
+  SET set_outcome = 'Patient transferred out';
+END IF;
+
+IF set_patient_state = 3 OR set_patient_state = 127 THEN
+  SET set_outcome = 'Patient died';
+END IF;
+
+
+IF set_patient_state != 3 AND set_patient_state != 127 THEN
+  SET set_patient_state_died = (SELECT state FROM `patient_state` 
+  INNER JOIN patient_program p ON p.patient_program_id = patient_state.patient_program_id AND p.program_id = set_program_id 
+  AND p.site_id = my_site_id AND patient_state.site_id = my_site_id
+  WHERE (patient_state.voided = 0 AND p.voided = 0 AND p.program_id = program_id AND DATE(start_date) <= visit_date 
+  AND p.patient_id = patient_id) AND (patient_state.voided = 0) AND state = 3 ORDER BY patient_state.patient_state_id DESC, patient_state.date_created DESC, start_date DESC LIMIT 1);
+
+  SET set_died_concept_id = (SELECT concept_id FROM concept_name WHERE name = 'Patient died' LIMIT 1);
+
+  IF set_patient_state_died IN(SELECT program_workflow_state_id FROM program_workflow_state WHERE concept_id = set_died_concept_id AND retired = 0) THEN
+    SET set_outcome = 'Patient died';
+    SET set_patient_state = 3;
+  END IF;
+END IF;
+
+
+
+IF set_patient_state = 6 THEN
+  SET set_outcome = 'Treatment stopped';
+END IF;
+
+IF set_patient_state = 7 OR set_outcome = 'Pre-ART (Continue)' OR set_outcome IS NULL THEN
+
+  SET set_patient_state = current_pepfar_defaulter(patient_id, set_timestamp, my_site_id);
+
+  IF set_patient_state = 1 THEN
+    SET set_outcome = 'Defaulted';
+  END IF;
+
+  IF set_patient_state = 0 OR set_outcome IS NULL THEN
+
+    SET dispensed_quantity = (SELECT d.quantity
+      FROM orders o
+      INNER JOIN drug_order d ON d.order_id = o.order_id
+      AND d.site_id = my_site_id AND o.site_id = my_site_id
+      INNER JOIN drug ON drug.drug_id = d.drug_inventory_id
+      WHERE o.patient_id = patient_id AND d.drug_inventory_id IN(
+        SELECT DISTINCT(drug_id) FROM drug WHERE
+        concept_id IN(SELECT concept_id FROM concept_set WHERE concept_set = 1085)
+    ) AND DATE(o.start_date) <= visit_date AND d.quantity > 0 ORDER BY start_date DESC LIMIT 1);
+
+    IF dispensed_quantity > 0 THEN
+      SET set_outcome = 'On antiretrovirals';
+    END IF;
+  END IF;
+END IF;
+
+IF set_outcome IS NULL THEN
+  SET set_patient_state = current_pepfar_defaulter(patient_id, set_timestamp, my_site_id);
+
+  IF set_patient_state = 1 THEN
+    SET set_outcome = 'Defaulted';
+  END IF;
+
+  IF set_outcome IS NULL THEN
     SET set_outcome = 'Unknown';
+  END IF;
 
-    -- Retrieve the patient state and outcome
-    SELECT 
-        COALESCE(
-            CASE
-                WHEN ps.state = 1 THEN
-                    CASE
-                        WHEN current_pepfar_defaulter(set_patient_id, set_timestamp, my_site_id) = 1 THEN 'Defaulted'
-                        ELSE 'Pre-ART (Continue)'
-                    END
-                WHEN ps.state = 2 THEN 'Patient transferred out'
-                WHEN ps.state = 3 OR ps.state = 127 THEN 'Patient died'
-                WHEN ps.state != 3 AND ps.state != 127 THEN
-                    CASE
-                        WHEN EXISTS (
-                            SELECT 1
-                            FROM patient_state ps2
-                            INNER JOIN patient_program pp ON pp.patient_program_id = ps2.patient_program_id 
-                                AND pp.program_id = set_program_id AND pp.site_id = my_site_id
-                            WHERE ps2.state = 3 AND ps2.voided = 0 AND pp.voided = 0 
-                                AND DATE(ps2.start_date) <= my_end_date 
-                                AND pp.patient_id = set_patient_id
-                        ) THEN 'Patient died'
-                    END
-                WHEN ps.state = 6 THEN 'Treatment stopped'
-                ELSE
-                    CASE
-                        WHEN current_pepfar_defaulter(set_patient_id, set_timestamp, my_site_id) = 1 THEN 'Defaulted'
-                        WHEN dq.dispensed_quantity > 0 THEN 'On antiretrovirals'
-                        ELSE 'Unknown'
-                    END
-            END,
-            'Unknown'
-        ) INTO set_outcome
-    FROM patient_state ps
-    INNER JOIN patient_program pp ON pp.patient_program_id = ps.patient_program_id 
-        AND pp.program_id = set_program_id AND pp.site_id = my_site_id
-    LEFT JOIN (
-        SELECT 
-            MAX(d.quantity) AS dispensed_quantity,
-            o.patient_id
-        FROM orders o
-        INNER JOIN drug_order d ON d.order_id = o.order_id
-            AND o.site_id = my_site_id AND d.site_id = my_site_id
-            AND d.drug_inventory_id IN (
-                SELECT DISTINCT drug_id 
-                FROM drug 
-                WHERE concept_id IN (
-                    SELECT concept_id 
-                    FROM concept_set 
-                    WHERE concept_set = 1085
-                )
-            ) 
-        WHERE o.voided = 0
-            AND DATE(o.start_date) <= my_end_date 
-            AND d.quantity > 0 
-        GROUP BY o.patient_id
-    ) AS dq ON dq.patient_id = set_patient_id
-    WHERE ps.voided = 0 
-        AND pp.voided = 0 
-        AND DATE(ps.start_date) <= my_end_date 
-        AND pp.patient_id = set_patient_id
-    ORDER BY ps.start_date DESC
-    LIMIT 1; -- Limit to one row
+END IF;
 
-    -- Return the outcome
-    RETURN set_outcome;
+RETURN set_outcome;
 END$$
 DELIMITER ;
 
@@ -1575,55 +1366,47 @@ DELIMITER $$
 CREATE FUNCTION re_initiated_check(set_patient_id INT, set_date_enrolled DATE, my_site_id INT) RETURNS varchar(15) 
 DETERMINISTIC
 BEGIN
-    DECLARE re_initiated VARCHAR(15) DEFAULT 'N/A';
-    DECLARE check_one INT DEFAULT 0;
-    DECLARE check_two INT DEFAULT 0;
+DECLARE re_initiated VARCHAR(15) DEFAULT 'N/A';
+DECLARE check_one INT DEFAULT 0;
+DECLARE check_two INT DEFAULT 0;
 
-    DECLARE taken_arvs_concept INT;
-    DECLARE yes_concept INT;
-    DECLARE no_concept INT;
-    DECLARE date_art_last_taken_concept INT;
+DECLARE yes_concept INT;
+DECLARE no_concept INT;
+DECLARE date_art_last_taken_concept INT;
+DECLARE taken_arvs_concept INT;
 
-    SET yes_concept = (SELECT concept_id FROM concept_name WHERE name ='YES' LIMIT 1);
-    SET no_concept = (SELECT concept_id FROM concept_name WHERE name ='NO' LIMIT 1);
-    SET date_art_last_taken_concept = (SELECT concept_id FROM concept_name WHERE name ='DATE ART LAST TAKEN' LIMIT 1);
+set yes_concept = (SELECT concept_id FROM concept_name WHERE name ='YES' LIMIT 1);
+set no_concept = (SELECT concept_id FROM concept_name WHERE name ='NO' LIMIT 1);
+set date_art_last_taken_concept = (SELECT concept_id FROM concept_name WHERE name ='DATE ART LAST TAKEN' LIMIT 1);
 
-    SET check_one = (
-        SELECT COUNT(*)
-        FROM clinic_registration_encounter e 
-        INNER JOIN ever_registered_obs AS ero ON e.encounter_id = ero.encounter_id 
-            AND e.site_id = ero.site_id AND e.site_id = my_site_id
-        INNER JOIN obs o ON o.encounter_id = e.encounter_id AND o.concept_id = date_art_last_taken_concept 
-            AND o.voided = 0 AND o.site_id = my_site_id 
-        WHERE 
-            (o.concept_id = date_art_last_taken_concept AND TIMESTAMPDIFF(day, o.value_datetime, o.obs_datetime) > 14)
-            AND patient_date_enrolled(e.patient_id, my_site_id) = set_date_enrolled 
-            AND e.patient_id = set_patient_id
-    );
+set check_one = (SELECT e.patient_id FROM clinic_registration_encounter e 
+INNER JOIN ever_registered_obs AS ero ON e.encounter_id = ero.encounter_id 
+AND e.site_id = my_site_id AND ero.site_id = my_site_id
+INNER JOIN obs o ON o.encounter_id = e.encounter_id AND o.concept_id = date_art_last_taken_concept 
+AND o.voided = 0 AND o.site_id = my_site_id
+WHERE ((o.concept_id = date_art_last_taken_concept 
+AND (TIMESTAMPDIFF(day, o.value_datetime, o.obs_datetime)) > 14)) 
+AND patient_date_enrolled(e.patient_id, my_site_id) = set_date_enrolled AND e.patient_id = set_patient_id GROUP BY e.patient_id);
 
-    IF check_one >= 1 THEN
-        SET re_initiated = 'Re-initiated';
-    ELSE
-        SET taken_arvs_concept = (SELECT concept_id FROM concept_name WHERE name ='HAS THE PATIENT TAKEN ART IN THE LAST TWO MONTHS' LIMIT 1);
-        SET check_two = (
-            SELECT COUNT(*)
-            FROM clinic_registration_encounter e 
-            INNER JOIN ever_registered_obs AS ero ON e.encounter_id = ero.encounter_id 
-                AND e.site_id = ero.site_id AND e.site_id = my_site_id
-            INNER JOIN obs o ON o.encounter_id = e.encounter_id AND o.concept_id = taken_arvs_concept 
-                AND o.voided = 0 AND o.site_id = my_site_id
-            WHERE  
-                (o.concept_id = taken_arvs_concept AND o.value_coded = no_concept) 
-                AND patient_date_enrolled(e.patient_id, my_site_id) = set_date_enrolled 
-                AND e.patient_id = set_patient_id
-        );
-        
-        IF check_two >= 1 THEN
-            SET re_initiated = 'Re-initiated';
-        END IF;
-    END IF;
+if check_one >= 1 then set re_initiated ="Re-initiated";
+elseif check_two >= 1 then set re_initiated ="Re-initiated";
+end if;
 
-    RETURN re_initiated;
+if check_one = 'N/A' then
+    set taken_arvs_concept = (SELECT concept_id FROM concept_name WHERE name ='HAS THE PATIENT TAKEN ART IN THE LAST TWO MONTHS' LIMIT 1);
+    set check_two = (SELECT e.patient_id FROM clinic_registration_encounter e 
+    INNER JOIN ever_registered_obs AS ero ON e.encounter_id = ero.encounter_id
+    AND e.site_id = my_site_id AND ero.site_id = my_site_id
+    INNER JOIN obs o ON o.encounter_id = e.encounter_id 
+    AND o.concept_id = taken_arvs_concept AND o.voided = 0 AND o.site_id = my_site_id
+    WHERE  ((o.concept_id = taken_arvs_concept AND o.value_coded = no_concept)) 
+    AND patient_date_enrolled(e.patient_id, my_site_id) = set_date_enrolled AND e.patient_id = set_patient_id GROUP BY e.patient_id);
+
+    if check_two >= 1 then set re_initiated ="Re-initiated";
+    end if;
+end if;
+
+RETURN re_initiated;
 END$$
 
 DELIMITER ;
