@@ -583,7 +583,8 @@ IF set_status = 'Patient died' THEN
   SET date_of_death = (
     SELECT COALESCE(death_date, outcome_date)
     FROM temp_patient_outcomes INNER JOIN temp_earliest_start_date USING (patient_id)
-    WHERE cum_outcome = 'Patient died' AND patient_id = set_patient_id AND site_id = my_site_id
+    WHERE cum_outcome = 'Patient died' AND patient_id = set_patient_id
+    AND temp_patient_outcomes.site_id = my_site_id AND temp_earliest_start_date.site_id = my_site_id
   );
 
   IF date_of_death IS NULL THEN
