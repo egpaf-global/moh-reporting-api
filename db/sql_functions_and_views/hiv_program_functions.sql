@@ -536,6 +536,7 @@ DROP FUNCTION IF EXISTS date_antiretrovirals_started;
 DELIMITER $$
 CREATE FUNCTION date_antiretrovirals_started(set_patient_id INT, min_state_date DATE, my_site_id INT) RETURNS DATE
 DETERMINISTIC
+BEGIN
 DECLARE date_started DATE;
 DECLARE estimated_art_date DATE;
 DECLARE estimated_art_date_months  VARCHAR(45);
@@ -569,7 +570,6 @@ DELIMITER ;
 
 -- Died In
 DROP FUNCTION IF EXISTS died_in;
-
 DELIMITER $$
 CREATE FUNCTION died_in(set_patient_id INT, set_status VARCHAR(25), date_enrolled DATE, my_site_id INT) RETURNS varchar(25)
 DETERMINISTIC
@@ -721,6 +721,7 @@ DROP FUNCTION IF EXISTS female_maternal_status;
 DELIMITER $$
 CREATE FUNCTION female_maternal_status(my_patient_id INT, end_datetime DATETIME, my_site_id INT) RETURNS VARCHAR(20)
 DETERMINISTIC
+BEGIN
 DECLARE breastfeeding_date DATETIME;
 DECLARE pregnant_date DATETIME;
 DECLARE maternal_status VARCHAR(20);
@@ -835,6 +836,7 @@ DROP FUNCTION IF EXISTS patient_current_regimen;
 DELIMITER $$
 CREATE FUNCTION patient_current_regimen(my_patient_id INT, my_date DATE, my_site_id INT) RETURNS VARCHAR(255)
 DETERMINISTIC
+BEGIN
 DECLARE max_obs_datetime DATETIME;
 DECLARE regimen VARCHAR(10) DEFAULT 'N/A';
 
@@ -1410,5 +1412,3 @@ RETURN re_initiated;
 END$$
 
 DELIMITER ;
-
-
