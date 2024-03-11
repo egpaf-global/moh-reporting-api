@@ -333,7 +333,7 @@ BEGIN
         SET my_daily_dose = 1;
       END IF;
 
-            SET my_pill_count = drug_pill_count(my_patient_id, my_drug_id, my_obs_datetime);
+            SET my_pill_count = drug_pill_count(my_patient_id, my_drug_id, my_obs_datetime, my_site_id);
 
             SET @expiry_date = ADDDATE(DATE_SUB(my_start_date, INTERVAL 1 DAY), ((my_quantity + my_pill_count)/my_daily_dose));
 
@@ -406,7 +406,7 @@ BEGIN
         SET my_daily_dose = 1;
       END IF;
 
-            SET my_pill_count = drug_pill_count(my_patient_id, my_drug_id, my_obs_datetime);
+            SET my_pill_count = drug_pill_count(my_patient_id, my_drug_id, my_obs_datetime, my_site_id);
 
             SET @expiry_date = ADDDATE(DATE_SUB(my_start_date, INTERVAL 1 DAY), ((my_quantity + my_pill_count)/my_daily_dose));
 
@@ -479,7 +479,7 @@ BEGIN
         SET my_daily_dose = 1;
       END IF;
 
-            SET my_pill_count = drug_pill_count(my_patient_id, my_drug_id, my_obs_datetime);
+            SET my_pill_count = drug_pill_count(my_patient_id, my_drug_id, my_obs_datetime, my_site_id);
 
             SET @expiry_date = ADDDATE(DATE_SUB(my_start_date, INTERVAL 1 DAY), ((my_quantity + my_pill_count)/my_daily_dose));
 
@@ -551,7 +551,7 @@ BEGIN
         SET my_daily_dose = 1;
       END IF;
 
-            SET my_pill_count = drug_pill_count(my_patient_id, my_drug_id, my_obs_datetime);
+            SET my_pill_count = drug_pill_count(my_patient_id, my_drug_id, my_obs_datetime, my_site_id);
 
             SET @expiry_date = ADDDATE(DATE_SUB(my_start_date, INTERVAL 1 DAY), ((my_quantity + my_pill_count)/my_daily_dose));
 
