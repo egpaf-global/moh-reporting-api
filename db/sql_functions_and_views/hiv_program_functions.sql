@@ -351,8 +351,8 @@ DELIMITER ;
 DROP FUNCTION IF EXISTS current_defaulter;
 
 DELIMITER $$
-CREATE FUNCTION current_defaulter(my_patient_id INT, my_end_date DATE, my_site_id INT) RETURNS VARCHAR(45)
-DETERMINISTIC
+CREATE FUNCTION `current_defaulter`(my_patient_id INT, my_end_date DATE, my_site_id INT) RETURNS varchar(45) CHARSET latin1
+    DETERMINISTIC
 BEGIN
     DECLARE flag INT DEFAULT 0;
 
@@ -369,7 +369,7 @@ BEGIN
     DECLARE cur1 CURSOR FOR
         SELECT
             d.drug_inventory_id,
-            o.start_date,
+            DATE(o.start_date) start_date,
             d.equivalent_daily_dose AS daily_dose,
             SUM(d.quantity) AS total_quantity,
             DATE(o.start_date) AS obs_date
@@ -427,7 +427,6 @@ BEGIN
     RETURN flag;
 END$$
 DELIMITER ;
-
 
 -- Current defaulter date
 DROP FUNCTION IF EXISTS current_defaulter_date;
