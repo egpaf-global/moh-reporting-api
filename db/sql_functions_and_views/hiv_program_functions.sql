@@ -505,7 +505,7 @@ DELIMITER ;
 -- Current PEPFAR defaulter date
 DROP FUNCTION IF EXISTS current_pepfar_defaulter_date;
 DELIMITER $$
-CREATE FUNCTION current_pepfar_defaulter(my_patient_id INT, my_end_date date, my_site_id INT) RETURNS varchar(15)
+CREATE FUNCTION current_pepfar_defaulter_date(my_patient_id INT, my_end_date date, my_site_id INT) RETURNS varchar(15)
 DETERMINISTIC 
 BEGIN
   DECLARE done INT DEFAULT FALSE;
