@@ -980,7 +980,7 @@ DELIMITER ;
 DROP FUNCTION IF EXISTS patient_outcome;
 
 DELIMITER $$
-CREATE FUNCTION patient_outcome(patient_id INT, visit_date date, my_site_id INT) RETURNS VARCHAR(45)
+CREATE FUNCTION patient_outcome(patient_id INT, visit_date DATE, my_site_id INT) RETURNS VARCHAR(45)
 DETERMINISTIC
 BEGIN
 DECLARE set_program_id INT;
@@ -996,11 +996,11 @@ SET set_timestamp = TIMESTAMP(CONCAT(DATE(visit_date), ' ', '23:59:59'));
 SET set_program_id = (SELECT program_id FROM program WHERE name ="HIV PROGRAM" LIMIT 1);
 
 SET set_patient_state = (SELECT state FROM `patient_state` INNER JOIN patient_program p 
-ON p.patient_program_id = patient_state.patient_program_id 
-AND p.program_id = set_program_id AND p.site_id = my_site_id AND patient_state.site_id = my_site_id
+ON p.patient_program_id = patient_state.patient_program_id AND p.program_id = set_program_id 
+AND p.site_id = my_site_id AND patient_state.site_id = my_site_id 
 WHERE (patient_state.voided = 0 AND p.voided = 0 AND p.program_id = program_id 
-AND DATE(start_date) <= visit_date AND p.patient_id = patient_id) 
-AND (patient_state.voided = 0) ORDER BY start_date DESC, patient_state.patient_state_id DESC, patient_state.date_created DESC LIMIT 1);
+AND DATE(start_date) <= visit_date AND p.patient_id = patient_id) AND (patient_state.voided = 0) 
+ORDER BY start_date DESC, patient_state.patient_state_id DESC, patient_state.date_created DESC LIMIT 1);
 
 IF set_patient_state = 1 THEN
   SET set_patient_state = current_defaulter(patient_id, set_timestamp, my_site_id);
@@ -1020,7 +1020,7 @@ IF set_patient_state = 3 OR set_patient_state = 127 THEN
   SET set_outcome = 'Patient died';
 END IF;
 
-
+/* ............... This block of code checks if the patient has any state that is "died" */
 IF set_patient_state != 3 AND set_patient_state != 127 THEN
   SET set_patient_state_died = (SELECT state FROM `patient_state` INNER JOIN patient_program p 
   ON p.patient_program_id = patient_state.patient_program_id AND p.program_id = set_program_id 
@@ -1036,7 +1036,7 @@ IF set_patient_state != 3 AND set_patient_state != 127 THEN
     SET set_patient_state = 3;
   END IF;
 END IF;
-
+/* ....................  ends here .................... */
 
 
 IF set_patient_state = 6 THEN
@@ -1055,7 +1055,7 @@ IF set_patient_state = 7 OR set_outcome = 'Pre-ART (Continue)' OR set_outcome IS
     SET dispensed_quantity = (SELECT d.quantity
       FROM orders o
       INNER JOIN drug_order d ON d.order_id = o.order_id
-      AND d.site_id = my_site_id AND o.site_id = my_site_id
+      AND o.site_id = my_site_id AND d.site_id = my_site_id
       INNER JOIN drug ON drug.drug_id = d.drug_inventory_id
       WHERE o.patient_id = patient_id AND o.voided = 0
       AND d.drug_inventory_id IN(
