@@ -634,7 +634,7 @@ DELIMITER ;
 DROP FUNCTION IF EXISTS died_in;
 
 DELIMITER $$
-CREATE FUNCTION died_in(set_patient_id INT, my_end_date DATE, my_site_id INT) RETURNS VARCHAR(45)
+CREATE FUNCTION died_in(set_patient_id INT, set_status VARCHAR(25), date_enrolled DATE, my_site_id INT) RETURNS VARCHAR(45)
 DETERMINISTIC
 BEGIN
     DECLARE set_outcome VARCHAR(25) DEFAULT 'N/A';
@@ -1593,7 +1593,7 @@ BEGIN
             AND o.voided = 0 AND o.site_id = my_site_id 
         WHERE 
             (o.concept_id = date_art_last_taken_concept AND TIMESTAMPDIFF(day, o.value_datetime, o.obs_datetime) > 14)
-            AND patient_date_enrolled(e.patient_id) = set_date_enrolled 
+            AND patient_date_enrolled(e.patient_id, my_site_id) = set_date_enrolled 
             AND e.patient_id = set_patient_id
     );
 
@@ -1610,7 +1610,7 @@ BEGIN
                 AND o.voided = 0 AND o.site_id = my_site_id
             WHERE  
                 (o.concept_id = taken_arvs_concept AND o.value_coded = no_concept) 
-                AND patient_date_enrolled(e.patient_id) = set_date_enrolled 
+                AND patient_date_enrolled(e.patient_id, my_site_id) = set_date_enrolled 
                 AND e.patient_id = set_patient_id
         );
         
