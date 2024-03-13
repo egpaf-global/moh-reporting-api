@@ -651,9 +651,10 @@ DECLARE done INT DEFAULT FALSE;
   DECLARE cur1 CURSOR FOR SELECT SUM(ob.value_numeric), SUM(CAST(ob.value_text AS DECIMAL)) FROM obs ob
                         INNER JOIN drug_order do ON ob.order_id = do.order_id
                         AND do.site_id = my_site_id AND ob.site_id = my_site_id
+                        AND ob.person_id = my_patient_id
                         INNER JOIN orders o ON do.order_id = o.order_id
-                    WHERE ob.person_id = my_patient_id
-                        AND ob.concept_id = 2540
+                        AND o.site_id = my_site_id AND o.patient_id = my_patient_id
+                    WHERE ob.concept_id = 2540
                         AND ob.voided = 0
                         AND o.voided = 0
                         AND do.drug_inventory_id = my_drug_id
