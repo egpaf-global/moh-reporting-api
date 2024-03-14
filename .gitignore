@@ -30,4 +30,6 @@
 
 *.yml
 
+schema.rb
+
 Gemfile.lock
