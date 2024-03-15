@@ -619,25 +619,33 @@ DELIMITER ;
 DROP FUNCTION IF EXISTS disaggregated_age_group;
 
 DELIMITER $$
-CREATE FUNCTION disaggregated_age_group(birthdate DATE, end_date DATE) RETURNS VARCHAR(15)
+CREATE FUNCTION disaggregated_age_group(birthdate varchar(30), end_date varchar(30)) RETURNS varchar(25)
 DETERMINISTIC
 BEGIN
     DECLARE age_in_months INT;
-    DECLARE age_group VARCHAR(15);
-
+    DECLARE age_in_years INT;
+    DECLARE age_group VARCHAR(25);
+    
     SET age_in_months = TIMESTAMPDIFF(MONTH, birthdate, end_date);
-    SET age_group = 'Unknown';
-
-    IF age_in_months < 12 THEN
-        SET age_group = '<1 year';
-    ELSE
-        SET age_group = CONCAT(
-            FLOOR(age_in_months / 12), '-',
-            FLOOR((age_in_months - 12) / 5) * 5 + 1, '-', 
-            FLOOR((age_in_months - 12) / 5) * 5 + 5, ' years'
-        );
+    SET age_in_years = TIMESTAMPDIFF(YEAR, birthdate, end_date);
+    
+    IF age_in_months >= 0 AND age_in_months <= 5 THEN SET age_group = "0-5 months";
+    ELSEIF age_in_months <= 11 THEN SET age_group = "6-11 months";
+    ELSEIF age_in_months <= 23 THEN SET age_group = "12-23 months";
+    ELSEIF age_in_years >= 2 AND age_in_years <= 4 THEN SET age_group = "2-4 years";
+    ELSEIF age_in_years <= 9 THEN SET age_group = "5-9 years";
+    ELSEIF age_in_years <= 14 THEN SET age_group = "10-14 years";
+    ELSEIF age_in_years <= 17 THEN SET age_group = "15-17 years";
+    ELSEIF age_in_years <= 19 THEN SET age_group = "18-19 years";
+    ELSEIF age_in_years <= 24 THEN SET age_group = "20-24 years";
+    ELSEIF age_in_years <= 29 THEN SET age_group = "25-29 years";
+    ELSEIF age_in_years <= 34 THEN SET age_group = "30-34 years";
+    ELSEIF age_in_years <= 39 THEN SET age_group = "35-39 years";
+    ELSEIF age_in_years <= 44 THEN SET age_group = "40-44 years";
+    ELSEIF age_in_years <= 49 THEN SET age_group = "45-49 years";
+    ELSE SET age_group = "50 plus years";
     END IF;
-
+    
     RETURN age_group;
 END$$
 DELIMITER ;
