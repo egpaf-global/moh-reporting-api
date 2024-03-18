@@ -42,7 +42,7 @@ gem 'rack-cors'
 gem 'composite_primary_keys'
 gem 'rest-client'
 
-gem 'malawi_hiv_program_reports', '~> 1.0.1'
+gem 'malawi_hiv_program_reports', '1.0.2'
 
 # gem 'malawi_hiv_program_reports', git: 'https://github.com/EGPAFMalawiHIS/malawi_hiv_program_reports', branch: 'main'
 # gem 'malawi_hiv_program_reports', path: '../malawi_hiv_program_reports'
