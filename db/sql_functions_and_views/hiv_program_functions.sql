@@ -668,7 +668,7 @@ DECLARE done INT DEFAULT FALSE;
         ELSE 0
 	end 
 							) FROM obs ob
-                        INNER JOIN drug_order do ON ob.order_id = do.order_id AND do.site_id = my_site_id AND do.quantity > 0 AND do.drug_inventory_id = my_drug_id
+                        INNER JOIN drug_order do ON ob.order_id = do.order_id AND do.site_id = my_site_id AND do.drug_inventory_id = my_drug_id -- AND do.quantity > 0
                         INNER JOIN orders o ON do.order_id = o.order_id AND o.site_id = my_site_id AND o.patient_id = my_patient_id AND o.voided = 0
                     WHERE ob.person_id = my_patient_id
                         AND ob.concept_id = 2540
