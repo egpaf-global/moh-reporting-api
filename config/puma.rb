@@ -1,7 +1,10 @@
 require 'etc'
 
 num_cores = Etc.nprocessors
-num = num_cores > 2 ? num_cores - 2 : 1
+num = num_cores > 5 ? num_cores - 2 : 1
+num = num > 20 ? num / 2 : num
+# workers should be a 10th of the number of cores
+workers = num / 10
 
 # Puma can serve each request in a thread from an internal thread pool.
 # The `threads` method setting takes two numbers: a minimum and maximum.
@@ -36,7 +39,7 @@ pidfile ENV.fetch('PIDFILE') { 'tmp/pids/server.pid' }
 # Workers do not work on JRuby or Windows (both of which do not support
 # processes).
 #
-workers ENV.fetch('WEB_CONCURRENCY', num)
+workers ENV.fetch('WEB_CONCURRENCY', workers)
 
 # Use the `preload_app!` method when specifying a `workers` number.
 # This directive tells Puma to first boot the application and load code
