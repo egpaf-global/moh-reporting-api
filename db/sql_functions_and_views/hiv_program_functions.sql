@@ -323,7 +323,7 @@ BEGIN
   DECLARE my_default_date DATE;
   DECLARE done INT DEFAULT FALSE;
   DECLARE my_start_date, my_expiry_date, my_obs_datetime DATETIME;
-  DECLARE my_daily_dose, my_quantity, my_pill_count, my_total_text, my_total_numeric DECIMAL(6, 2);
+  DECLARE my_daily_dose, my_quantity, my_pill_count, my_total_text, my_total_numeric DECIMAL(10, 2);
   DECLARE my_drug_id, flag INT;
  
   DECLARE cur1 CURSOR FOR SELECT d.drug_inventory_id, o.start_date, d.equivalent_daily_dose daily_dose, SUM(d.quantity), o.start_date FROM drug_order d
@@ -396,7 +396,7 @@ DETERMINISTIC
 BEGIN
   DECLARE done INT DEFAULT FALSE;
   DECLARE my_start_date, my_expiry_date, my_obs_datetime DATETIME;
-  DECLARE my_daily_dose, my_quantity, my_pill_count, my_total_text, my_total_numeric DECIMAL(6, 2);
+  DECLARE my_daily_dose, my_quantity, my_pill_count, my_total_text, my_total_numeric DECIMAL(10, 2);
   DECLARE my_drug_id, flag INT;
  
   DECLARE cur1 CURSOR FOR SELECT d.drug_inventory_id, o.start_date, d.equivalent_daily_dose daily_dose, SUM(d.quantity), o.start_date FROM drug_order d
@@ -471,7 +471,7 @@ BEGIN
   DECLARE my_default_date DATE;
   DECLARE done INT DEFAULT FALSE;
   DECLARE my_start_date, my_expiry_date, my_obs_datetime DATETIME;
-  DECLARE my_daily_dose, my_quantity, my_pill_count, my_total_text, my_total_numeric DECIMAL(6, 2);
+  DECLARE my_daily_dose, my_quantity, my_pill_count, my_total_text, my_total_numeric DECIMAL(10, 2);
   DECLARE my_drug_id, flag INT;
  
   DECLARE cur1 CURSOR FOR SELECT d.drug_inventory_id, o.start_date, d.equivalent_daily_dose daily_dose, SUM(d.quantity), o.start_date FROM drug_order d
