@@ -1,8 +1,7 @@
 # frozen_string_literal: true
 
 class Patient < VoidableRecord
-  include ModelUtils
-
+  include MalawiHivProgramReports::Utils::ModelUtils
   after_void :void_related_models
 
   NPID_NAME = 'National id'

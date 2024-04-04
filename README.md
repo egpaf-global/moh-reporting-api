@@ -24,10 +24,17 @@ cp config/locales/en.yml.example config/locales/en.yml
 ### Gemfile
 This is meant to work with both MySQL and Postgres. So you will need to enable PG if using Postgres by uncommenting the line. If you do this then MYSQL should be uncommented out. Otherwise MySQL is enabled by default.
 
+### Install Bundler
+Install bundler with
+
+```bash
+  gem install bundler
+```
+
 ### Installing Dependencies
 To install dependencies
 ```bash
-bunlde i
+bundle i
 ```
 
 ### MySQL Functions and Schemas
