@@ -69,3 +69,8 @@ See the following for more:
 These are the endpoints currently supported
 - Locations: ```{host}:{port}/api/v1/locations/{query_parameters}``` The query parameters are for pagination
 - Reports: ```{host}:{port}/api/v1/reports/{report_name}/{query_parameters}```
+
+## To create a the DRC datalake database:
+ ```
+ pv db/datalake_structure.sql | mysql -u USERNAME -p PASSWORD DATABASE_NAME
+ ```
