@@ -8,7 +8,7 @@ class AddOtherReportsToDef < ActiveRecord::Migration[7.0]
     User.current = User.first
     MalawiHivProgramReports::ReportMap::REPORTS.each do |key, value|
       puts "processing #{key} report, found #{value}"
-      ReportType.find_or_create_by(name: key, creator: User.current.user_id, date_created: Time.now)
+      ReportType.find_or_create_by(name: key, creator: (User.current.user_id rescue 1), date_created: Time.now)
     end
   end
 end
