@@ -74,3 +74,7 @@ These are the endpoints currently supported
  ```
  pv db/datalake_structure.sql | mysql -u USERNAME -p PASSWORD DATABASE_NAME
  ```
+
+ ```
+ /bin/bash ./bin/create_databases.sh
+ ```

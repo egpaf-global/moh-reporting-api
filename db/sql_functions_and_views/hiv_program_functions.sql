@@ -1188,6 +1188,7 @@ DROP FUNCTION IF EXISTS patient_screened_for_tb;
 
 DELIMITER $$
 CREATE FUNCTION patient_screened_for_tb(my_patient_id INT, my_start_date DATE, my_end_date DATE, my_site_id INT) RETURNS int(11)
+DETERMINISTIC
 BEGIN
     DECLARE screened INT DEFAULT FALSE;
 	DECLARE record_value INT;
